@@ -1,0 +1,62 @@
+services:
+
+  # ── SQL Server Database ──────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${DB_PASSWORD:-YourStrong!Passw0rd}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -Q "SELECT 1" -C -b
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── C# API + Background Workers ─────────────────────────
+  api:
+    build:
+      context: ./GlucoseAPI
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=GlucoseDb;User Id=sa;Password=${DB_PASSWORD:-YourStrong!Passw0rd};TrustServerCertificate=True;"
+      # LibreLink credentials are optional here — can be set via the UI Settings page
+      LibreLink__Email: ${LIBRE_EMAIL:-}
+      LibreLink__Password: ${LIBRE_PASSWORD:-}
+      LibreLink__PatientId: ${LIBRE_PATIENT_ID:-}
+      LibreLink__Region: ${LIBRE_REGION:-eu}
+      LibreLink__Version: ${LIBRE_VERSION:-4.16.0}
+      LibreLink__FetchIntervalMinutes: ${FETCH_INTERVAL:-5}
+      # Samsung Notes — path inside the container where synced data is mounted
+      SamsungNotes__DataPath: /samsung-notes
+      SamsungNotes__SyncIntervalMinutes: ${SAMSUNG_NOTES_INTERVAL:-10}
+      # Backup — path inside the container where backups are written
+      Backup__Path: /backup
+    volumes:
+      # Mount Samsung Notes LocalState directory from Windows host
+      # Find your path: dir "$env:LOCALAPPDATA\Packages\SAMSUNGELECTRONICSCoLtd.SamsungNotes_*\LocalState"
+      - "${SAMSUNG_NOTES_PATH:-./samsung-notes-placeholder}:/samsung-notes:ro"
+      # Local backup folder (glucose data, events, analysis)
+      - "${BACKUP_PATH:-./backup}:/backup"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  # ── React Frontend ──────────────────────────────────────
+  web:
+    build:
+      context: ./glucose-ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  sqldata:

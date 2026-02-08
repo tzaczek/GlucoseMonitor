@@ -1,0 +1,426 @@
+import React, { useState, useEffect } from 'react';
+
+const API_BASE = process.env.REACT_APP_API_URL || '/api';
+
+const REGIONS = [
+  { value: 'eu', label: 'Europe (EU)' },
+  { value: 'us', label: 'United States (US)' },
+  { value: 'eu2', label: 'Europe 2 (EU2)' },
+  { value: 'de', label: 'Germany (DE)' },
+  { value: 'fr', label: 'France (FR)' },
+  { value: 'jp', label: 'Japan (JP)' },
+  { value: 'ap', label: 'Asia Pacific (AP)' },
+  { value: 'au', label: 'Australia (AU)' },
+  { value: 'ae', label: 'UAE (AE)' },
+  { value: 'ca', label: 'Canada (CA)' },
+];
+
+function SettingsPage() {
+  const [settings, setSettings] = useState({
+    email: '',
+    password: '',
+    patientId: '',
+    region: 'eu',
+    version: '4.12.0',
+    fetchIntervalMinutes: 5,
+  });
+  const [analysisSettings, setAnalysisSettings] = useState({
+    gptApiKey: '',
+    notesFolderName: 'Cukier',
+    analysisIntervalMinutes: 15,
+    reanalysisMinIntervalMinutes: 30,
+  });
+  const [isConfigured, setIsConfigured] = useState(false);
+  const [isAnalysisConfigured, setIsAnalysisConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savingAnalysis, setSavingAnalysis] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [analysisMessage, setAnalysisMessage] = useState(null);
+  const [testResult, setTestResult] = useState(null);
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const [settingsRes, analysisRes] = await Promise.all([
+        fetch(`${API_BASE}/settings`),
+        fetch(`${API_BASE}/settings/analysis`),
+      ]);
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
+        setSettings(data);
+        setIsConfigured(data.isConfigured);
+      }
+      if (analysisRes.ok) {
+        const data = await analysisRes.json();
+        setAnalysisSettings(data);
+        setIsAnalysisConfigured(data.isConfigured);
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to load settings.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setSettings(prev => ({
+      ...prev,
+      [name]: name === 'fetchIntervalMinutes' ? parseInt(value) || 1 : value
+    }));
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'Settings saved successfully! Data fetching will start/restart shortly.' });
+        setIsConfigured(true);
+      } else {
+        const data = await res.json();
+        setMessage({ type: 'error', text: data.message || 'Failed to save settings.' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to save settings.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/settings/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setTestResult(data);
+      } else {
+        setTestResult({ success: false, message: 'Request failed.' });
+      }
+    } catch (err) {
+      setTestResult({ success: false, message: 'Could not connect to API.' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleAnalysisChange = (e) => {
+    const { name, value } = e.target;
+    const intFields = ['analysisIntervalMinutes', 'reanalysisMinIntervalMinutes'];
+    setAnalysisSettings(prev => ({
+      ...prev,
+      [name]: intFields.includes(name) ? parseInt(value) || 1 : value
+    }));
+  };
+
+  const handleSaveAnalysis = async (e) => {
+    e.preventDefault();
+    setSavingAnalysis(true);
+    setAnalysisMessage(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/settings/analysis`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysisSettings),
+      });
+
+      if (res.ok) {
+        setAnalysisMessage({ type: 'success', text: 'Analysis settings saved successfully!' });
+        setIsAnalysisConfigured(true);
+      } else {
+        const data = await res.json();
+        setAnalysisMessage({ type: 'error', text: data.message || 'Failed to save analysis settings.' });
+      }
+    } catch (err) {
+      setAnalysisMessage({ type: 'error', text: 'Failed to save analysis settings.' });
+    } finally {
+      setSavingAnalysis(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="settings-page">
+        <div className="loading">
+          <div className="spinner" />
+          <p>Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-page">
+      <div className="settings-card">
+        <div className="settings-header">
+          <h2>LibreLink Up Configuration</h2>
+          <p>Enter your LibreLink Up credentials to start fetching glucose data.</p>
+          {isConfigured && (
+            <span className="config-badge configured">Configured</span>
+          )}
+          {!isConfigured && (
+            <span className="config-badge not-configured">Not Configured</span>
+          )}
+        </div>
+
+        <form onSubmit={handleSave}>
+          <div className="form-section">
+            <h3>Credentials</h3>
+
+            <div className="form-group">
+              <label htmlFor="email">Email</label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                value={settings.email}
+                onChange={handleChange}
+                placeholder="your-email@example.com"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password">Password</label>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                value={settings.password}
+                onChange={handleChange}
+                placeholder="Your LibreLink Up password"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-section">
+            <h3>Connection</h3>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="region">Region</label>
+                <select
+                  id="region"
+                  name="region"
+                  value={settings.region}
+                  onChange={handleChange}
+                >
+                  {REGIONS.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="fetchIntervalMinutes">Fetch Interval (min)</label>
+                <input
+                  type="number"
+                  id="fetchIntervalMinutes"
+                  name="fetchIntervalMinutes"
+                  value={settings.fetchIntervalMinutes}
+                  onChange={handleChange}
+                  min="1"
+                  max="60"
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="patientId">Patient ID <span className="optional">(optional — auto-detected)</span></label>
+              <input
+                type="text"
+                id="patientId"
+                name="patientId"
+                value={settings.patientId}
+                onChange={handleChange}
+                placeholder="Leave empty to auto-detect"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="version">LLU Version <span className="optional">(advanced)</span></label>
+              <input
+                type="text"
+                id="version"
+                name="version"
+                value={settings.version}
+                onChange={handleChange}
+              />
+            </div>
+          </div>
+
+          {message && (
+            <div className={`message ${message.type}`}>
+              {message.text}
+            </div>
+          )}
+
+          {testResult && (
+            <div className={`message ${testResult.success ? 'success' : 'error'}`}>
+              <strong>{testResult.success ? '✓' : '✗'} {testResult.message}</strong>
+              {testResult.patients && testResult.patients.length > 0 && (
+                <div className="patients-list">
+                  <p>Patients found:</p>
+                  <ul>
+                    {testResult.patients.map((p, i) => (
+                      <li key={i}>
+                        {p.firstName} {p.lastName}
+                        <code>{p.patientId}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button type="button" className="btn-test" onClick={handleTest} disabled={testing}>
+              {testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            <button type="submit" className="btn-save" disabled={saving}>
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* ── Analysis / GPT Settings ────────────────────── */}
+      <div className="settings-card" style={{ marginTop: 24 }}>
+        <div className="settings-header">
+          <h2>🤖 AI Analysis Configuration</h2>
+          <p>Configure GPT API key to enable AI-powered glucose response analysis.</p>
+          {isAnalysisConfigured && (
+            <span className="config-badge configured">Configured</span>
+          )}
+          {!isAnalysisConfigured && (
+            <span className="config-badge not-configured">Not Configured</span>
+          )}
+        </div>
+
+        <form onSubmit={handleSaveAnalysis}>
+          <div className="form-section">
+            <h3>OpenAI API</h3>
+            <div className="form-group">
+              <label htmlFor="gptApiKey">GPT API Key</label>
+              <input
+                type="password"
+                id="gptApiKey"
+                name="gptApiKey"
+                value={analysisSettings.gptApiKey}
+                onChange={handleAnalysisChange}
+                placeholder="sk-..."
+              />
+            </div>
+          </div>
+
+          <div className="form-section">
+            <h3>Event Correlation</h3>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="notesFolderName">Notes Folder Name</label>
+                <input
+                  type="text"
+                  id="notesFolderName"
+                  name="notesFolderName"
+                  value={analysisSettings.notesFolderName}
+                  onChange={handleAnalysisChange}
+                  placeholder="Cukier"
+                />
+                <span className="form-hint">Samsung Notes folder to correlate with glucose data</span>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="analysisIntervalMinutes">Analysis Interval (min)</label>
+                <input
+                  type="number"
+                  id="analysisIntervalMinutes"
+                  name="analysisIntervalMinutes"
+                  value={analysisSettings.analysisIntervalMinutes}
+                  onChange={handleAnalysisChange}
+                  min="1"
+                  max="120"
+                />
+                <span className="form-hint">How often the background worker checks for new events</span>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="reanalysisMinIntervalMinutes">Re-analysis Cooldown (min)</label>
+                <input
+                  type="number"
+                  id="reanalysisMinIntervalMinutes"
+                  name="reanalysisMinIntervalMinutes"
+                  value={analysisSettings.reanalysisMinIntervalMinutes}
+                  onChange={handleAnalysisChange}
+                  min="1"
+                  max="1440"
+                />
+                <span className="form-hint">Min. time between AI re-analyses triggered by new glucose data. New events always analyze immediately.</span>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="timeZone">Display Timezone</label>
+              <select
+                id="timeZone"
+                name="timeZone"
+                value={analysisSettings.timeZone || 'Europe/Warsaw'}
+                onChange={handleAnalysisChange}
+              >
+                <option value="Europe/Warsaw">Europe/Warsaw (CET/CEST)</option>
+                <option value="Europe/London">Europe/London (GMT/BST)</option>
+                <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
+                <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                <option value="America/New_York">America/New_York (EST/EDT)</option>
+                <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+                <option value="America/Denver">America/Denver (MST/MDT)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                <option value="UTC">UTC</option>
+              </select>
+              <span className="form-hint">Timezone used for AI analysis timestamps — should match your local time</span>
+            </div>
+          </div>
+
+          {analysisMessage && (
+            <div className={`message ${analysisMessage.type}`}>
+              {analysisMessage.text}
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button type="submit" className="btn-save" disabled={savingAnalysis}>
+              {savingAnalysis ? 'Saving...' : 'Save Analysis Settings'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default SettingsPage;

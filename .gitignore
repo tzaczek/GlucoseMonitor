@@ -1,0 +1,58 @@
+# ── Build outputs ─────────────────────────────────────────
+bin/
+obj/
+out/
+publish/
+
+# ── IDE / Editor ──────────────────────────────────────────
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+
+# ── .NET / NuGet ──────────────────────────────────────────
+*.nupkg
+*.snupkg
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# ── Node / React ──────────────────────────────────────────
+node_modules/
+glucose-ui/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Backup data (contains personal health data) ──────────
+backup/
+
+# ── Samsung Notes placeholder (empty mount target) ───────
+samsung-notes-placeholder/
+
+# ── Environment / Credentials ────────────────────────────
+.env
+.env.*
+!.env.example
+!env.example
+
+# ── OS files ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Docker ────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Logs ──────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Temp files ────────────────────────────────────────────
+*.tmp
+*.temp
+*.swp
+*~
