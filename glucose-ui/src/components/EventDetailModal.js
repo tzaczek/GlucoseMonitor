@@ -16,9 +16,15 @@ import { format, parseISO } from 'date-fns';
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 function EventDetailModal({ eventId, onClose, onReprocess }) {
+  const [currentEventId, setCurrentEventId] = useState(eventId);
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reprocessing, setReprocessing] = useState(false);
+
+  // Sync internal ID when parent prop changes
+  useEffect(() => {
+    setCurrentEventId(eventId);
+  }, [eventId]);
 
   // Zoom state for chart
   const [refAreaLeft, setRefAreaLeft] = useState(null);
@@ -30,8 +36,11 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
   useEffect(() => {
     const loadEvent = async () => {
       setLoading(true);
+      setInitialZoomApplied(false);
+      setZoomLeft(null);
+      setZoomRight(null);
       try {
-        const res = await fetch(`${API_BASE}/events/${eventId}`);
+        const res = await fetch(`${API_BASE}/events/${currentEventId}`);
         if (res.ok) {
           const data = await res.json();
           setEvent(data);
@@ -43,7 +52,7 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
       }
     };
     loadEvent();
-  }, [eventId]);
+  }, [currentEventId]);
 
   // Close on Escape
   useEffect(() => {
@@ -56,7 +65,7 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
 
   const reloadEvent = async () => {
     try {
-      const res = await fetch(`${API_BASE}/events/${eventId}`);
+      const res = await fetch(`${API_BASE}/events/${currentEventId}`);
       if (res.ok) {
         const data = await res.json();
         setEvent(data);
@@ -69,7 +78,7 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
   const handleReprocess = async () => {
     setReprocessing(true);
     try {
-      const res = await fetch(`${API_BASE}/events/${eventId}/reprocess`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/events/${currentEventId}/reprocess`, { method: 'POST' });
       if (res.ok) {
         onReprocess?.();
         await reloadEvent();
@@ -222,6 +231,22 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
     );
     return closest[xDataKey];
   }, [eventTimeMs, displayData, xDataKey]);
+
+  // Overlapping events markers (other events in the same glucose window)
+  const overlappingMarkers = useMemo(() => {
+    if (!event?.overlappingEvents?.length || displayData.length === 0) return [];
+    return event.overlappingEvents.map((oe) => {
+      const oeTimeMs = new Date(oe.eventTimestamp).getTime();
+      const closest = displayData.reduce((prev, curr) =>
+        Math.abs(curr.time - oeTimeMs) < Math.abs(prev.time - oeTimeMs) ? curr : prev
+      );
+      return {
+        ...oe,
+        markerX: closest[xDataKey],
+        timeLabel: format(parseISO(oe.eventTimestamp), 'HH:mm'),
+      };
+    });
+  }, [event, displayData, xDataKey]);
 
   const CustomTooltip = ({ active, payload }) => {
     if (!active || !payload || !payload.length) return null;
@@ -471,6 +496,25 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
                           />
                         )}
 
+                        {/* Overlapping events — muted markers */}
+                        {overlappingMarkers.map((oe) => (
+                          <ReferenceLine
+                            key={oe.id}
+                            x={oe.markerX}
+                            stroke="#888"
+                            strokeDasharray="4 4"
+                            strokeWidth={1}
+                            strokeOpacity={0.6}
+                            label={{
+                              value: `${oe.noteTitle} ${oe.timeLabel}`,
+                              position: 'insideTopRight',
+                              fill: '#888',
+                              fontSize: 9,
+                              fontWeight: 400,
+                            }}
+                          />
+                        ))}
+
                         <Line
                           type="monotone"
                           dataKey="value"
@@ -520,6 +564,15 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
                         />
                         Event time
                       </span>
+                      {overlappingMarkers.length > 0 && (
+                        <span className="legend-item">
+                          <span
+                            className="legend-line"
+                            style={{ background: '#888' }}
+                          />
+                          Other events in window
+                        </span>
+                      )}
                       <span className="legend-item">
                         <span
                           className="legend-line"
@@ -537,6 +590,40 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
                   <h3 className="event-section-title">📈 Glucose Timeline</h3>
                   <div className="event-no-data">
                     No glucose readings available for this time period.
+                  </div>
+                </div>
+              )}
+
+              {/* Overlapping Events Info */}
+              {event.overlappingEvents && event.overlappingEvents.length > 0 && (
+                <div className="event-section">
+                  <h3 className="event-section-title">🔗 Other Events in Window</h3>
+                  <div className="overlapping-events-list">
+                    {event.overlappingEvents.map((oe) => {
+                      const offsetMs = new Date(oe.eventTimestamp).getTime() - new Date(event.eventTimestamp).getTime();
+                      const absMin = Math.round(Math.abs(offsetMs) / 60000);
+                      const direction = offsetMs >= 0 ? 'after' : 'before';
+                      const classColor = oe.aiClassification === 'green' ? '🟢' : oe.aiClassification === 'yellow' ? '🟡' : oe.aiClassification === 'red' ? '🔴' : '⬜';
+                      return (
+                        <div
+                          key={oe.id}
+                          className="overlapping-event-item overlapping-event-clickable"
+                          onClick={() => setCurrentEventId(oe.id)}
+                          title={`View "${oe.noteTitle}" event`}
+                        >
+                          <span className="overlapping-event-class">{classColor}</span>
+                          <span className="overlapping-event-title">{oe.noteTitle}</span>
+                          <span className="overlapping-event-time">
+                            {format(parseISO(oe.eventTimestamp), 'HH:mm')} ({absMin} min {direction})
+                          </span>
+                          {oe.glucoseAtEvent != null && (
+                            <span className="overlapping-event-glucose">
+                              {Math.round(oe.glucoseAtEvent)} mg/dL
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

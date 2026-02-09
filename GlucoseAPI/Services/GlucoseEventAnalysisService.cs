@@ -39,6 +39,17 @@ public class GlucoseEventAnalysisService : BackgroundService
         _notifications = notifications;
     }
 
+    /// <summary>
+    /// Manually trigger event processing (notes → events + AI analysis).
+    /// Can be called from the sync handler so the user doesn't have to wait
+    /// for the next background loop iteration.
+    /// </summary>
+    public async Task TriggerProcessingAsync(CancellationToken ct)
+    {
+        _logger.LogInformation("Manual event processing triggered.");
+        await ProcessEventsAsync(ct);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("GlucoseEventAnalysisService started.");

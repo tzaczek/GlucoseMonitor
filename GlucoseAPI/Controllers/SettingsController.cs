@@ -1,5 +1,6 @@
 using GlucoseAPI.Application.Features.Settings;
 using GlucoseAPI.Models;
+using GlucoseAPI.Services;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,8 +11,13 @@ namespace GlucoseAPI.Controllers;
 public class SettingsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly DatabaseBackupService _backupService;
 
-    public SettingsController(IMediator mediator) => _mediator = mediator;
+    public SettingsController(IMediator mediator, DatabaseBackupService backupService)
+    {
+        _mediator = mediator;
+        _backupService = backupService;
+    }
 
     [HttpGet]
     public async Task<ActionResult> GetSettings(CancellationToken ct)
@@ -51,4 +57,33 @@ public class SettingsController : ControllerBase
         var result = await _mediator.Send(new TestLibreLinkConnectionCommand(dto), ct);
         return Ok(result);
     }
+
+    [HttpGet("backup")]
+    public ActionResult GetBackupStatus()
+    {
+        return Ok(_backupService.GetStatus());
+    }
+
+    [HttpPost("backup")]
+    public async Task<ActionResult> TriggerBackup(CancellationToken ct)
+    {
+        var result = await _backupService.TriggerBackupAsync(ct);
+        return Ok(new { message = result });
+    }
+
+    [HttpPost("backup/restore")]
+    public async Task<ActionResult> RestoreBackup([FromBody] RestoreBackupRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request?.FileName))
+            return BadRequest(new { message = "File name is required." });
+
+        var result = await _backupService.RestoreFromBackupAsync(request.FileName, ct);
+        var success = !result.Contains("failed", StringComparison.OrdinalIgnoreCase)
+                   && !result.Contains("Invalid", StringComparison.OrdinalIgnoreCase)
+                   && !result.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                   && !result.Contains("already in progress", StringComparison.OrdinalIgnoreCase);
+        return success ? Ok(new { message = result }) : BadRequest(new { message = result });
+    }
 }
+
+public record RestoreBackupRequest(string FileName);

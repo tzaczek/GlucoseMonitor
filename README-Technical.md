@@ -105,6 +105,7 @@ GlucoseAPI/
     ├── EventAnalyzer.cs          # Scoped: runs GPT analysis on a single event
     ├── DailySummaryService.cs    # Generates daily summaries with GPT analysis
     ├── DataBackupService.cs      # Periodic JSON/CSV backup to local filesystem
+    ├── DatabaseBackupService.cs  # Daily SQL Server .bak backup + manual trigger/restore
     ├── ReportService.cs          # Generates PDF reports using QuestPDF + SkiaSharp
     ├── LibreLinkClient.cs        # Unofficial LibreLink Up HTTP client
     ├── SamsungNotesReader.cs     # Reads Samsung Notes SQLite + wdoc files
@@ -154,6 +155,7 @@ Program.cs registers:
     - SettingsService
     - SamsungNotesReader
     - EventAnalyzer               — uses IGptClient, INotificationService, TimeZoneConverter
+                                     queries overlapping events for multi-event context
     - ReportService               — PDF generation (QuestPDF + SkiaSharp)
 
   Singleton + HostedService (callable from handlers):
@@ -163,6 +165,10 @@ Program.cs registers:
       (TriggerSyncAsync for manual sync via TriggerNotesSyncHandler)
     - DailySummaryService        — generates daily summaries every 30 minutes
       (TriggerGenerationAsync for manual trigger via TriggerDailySummaryHandler)
+
+  Singleton + HostedService (callable from controllers):
+    - DatabaseBackupService      — daily SQL Server .bak backup (retained 7 days)
+      (TriggerBackupAsync / RestoreFromBackupAsync for manual backup/restore via Settings)
 
   Hosted Services (BackgroundService only):
     - GlucoseEventAnalysisService — correlates + analyzes every N minutes
@@ -326,11 +332,13 @@ Loop:
      e. Create new GlucoseEvent with computed stats
   4. Run AI analysis for all unanalyzed events (via EventAnalyzer):
      a. Apply cooldown for re-analyses (configurable, default 30 min)
-     b. Call GPT API with glucose data + note content
-     c. Parse [CLASSIFICATION: green/yellow/red] from response
-     d. Save to EventAnalysisHistory (immutable history)
-     e. Update GlucoseEvent with latest analysis
-     f. Log to AiUsageLogs
+     b. Query overlapping events (other events whose timestamp falls within the current
+        event's [PeriodStart, PeriodEnd] window) so the AI can account for their impact
+     c. Call GPT API with glucose data + note content + overlapping event context
+     d. Parse [CLASSIFICATION: green/yellow/red] from response
+     e. Save to EventAnalysisHistory (immutable history)
+     f. Update GlucoseEvent with latest analysis
+     g. Log to AiUsageLogs
   5. SignalR → "EventsUpdated", "AiUsageUpdated"
 ```
 
@@ -378,6 +386,30 @@ Loop:
   8. Delete snapshot directories older than 14 days
 ```
 
+#### 6. DatabaseBackupService (once per day)
+```
+Startup delay: 3 minutes
+On startup:
+  - Scans /backup/db/ for existing .bak files to populate status (last backup date, size)
+Loop:
+  1. Ensure /backup/db/ directory exists, chmod 777 for SQL Server write access
+  2. Execute: BACKUP DATABASE [GlucoseDb] TO DISK WITH FORMAT, INIT, COMPRESSION
+     → File: /backup/db/GlucoseDb_YYYY-MM-DD_HH-mm-ss.bak
+  3. Update in-memory status (last backup time, file name, size)
+  4. Delete .bak files older than 7 days
+
+Manual trigger (POST /api/settings/backup):
+  - Same logic, callable from Settings page
+
+Manual restore (POST /api/settings/backup/restore):
+  1. Validate filename (path traversal prevention)
+  2. Connect to master database (cannot restore while connected to GlucoseDb)
+  3. ALTER DATABASE [GlucoseDb] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+  4. RESTORE DATABASE [GlucoseDb] FROM DISK WITH REPLACE
+  5. ALTER DATABASE [GlucoseDb] SET MULTI_USER
+  6. On failure: best-effort recovery to MULTI_USER mode
+```
+
 ### API Endpoints
 
 | Method | Endpoint | Description |
@@ -407,6 +439,9 @@ Loop:
 | GET | `/api/settings/analysis` | Analysis settings (API key masked) |
 | PUT | `/api/settings/analysis` | Save analysis settings |
 | POST | `/api/settings/test` | Test LibreLink connection |
+| GET | `/api/settings/backup` | Database backup status (last backup, file list, sizes) |
+| POST | `/api/settings/backup` | Trigger manual database backup |
+| POST | `/api/settings/backup/restore` | Restore database from a backup file |
 | GET | `/api/aiusage/logs?limit=&from=&to=` | AI usage log entries |
 | GET | `/api/aiusage/summary?from=&to=` | Aggregated usage summary |
 | GET | `/api/aiusage/pricing` | Known model pricing table |
@@ -432,7 +467,7 @@ Loop:
 - **API client**: `IGptClient` interface (implemented by `OpenAiGptClient`) handles all HTTP communication with OpenAI via `IHttpClientFactory`. Services like `EventAnalyzer` depend on `IGptClient`, not `HttpClient`.
 - **Classification parsing**: The AI is instructed to begin each response with `[CLASSIFICATION: green|yellow|red]`. This is parsed by the domain service `ClassificationParser.Parse()` using a compiled regex, then stripped from the stored analysis text. Classification is stored in a separate `AiClassification` column.
 - **Glucose stats**: Computed by the domain service `GlucoseStatsCalculator` — centralizing the logic that was previously duplicated across services.
-- **Event analysis prompt**: Includes before/after glucose readings, note content, and glucose statistics. Asks for baseline assessment, response analysis, spike analysis, recovery, overall assessment, and a practical tip.
+- **Event analysis prompt**: Includes before/after glucose readings, note content, and glucose statistics. When other events fall within the same glucose observation window (e.g., exercise 30 min after a meal), they are included as an "OTHER EVENTS IN THIS GLUCOSE WINDOW" section listing each overlapping event's title, time offset, content, glucose level, and classification. The system prompt instructs the AI to factor overlapping events into the analysis, attribute glucose patterns to combined effects, and flag when isolating the main event's impact is difficult. Asks for baseline assessment, response analysis, spike analysis, recovery, overall assessment, and a practical tip.
 - **Daily summary prompt**: Includes full-day overview, dedicated overnight glucose analysis (00:00–06:00) with trend detection, morning glucose analysis (06:00–09:00) with dawn phenomenon detection and fasting glucose pre-diabetes flag (≥100 mg/dL), hourly glucose profile, event-by-event breakdown, and a sampled glucose timeline. Asks for day overview, key metrics, overnight analysis, morning glucose, meal impacts, patterns, best/worst moments, and actionable insights.
 - **Usage logging**: Every API call (success or failure) is logged to `AiUsageLogs` with model name, token counts, HTTP status, finish reason, and duration. Clients are notified via `INotificationService.NotifyAiUsageUpdatedAsync()`.
 - **Cost estimation**: `AiUsageController` maintains a static pricing dictionary for known models and computes estimated cost per call and in aggregate.
@@ -490,7 +525,7 @@ glucose-ui/
         ├── GlucoseChart.js        # Interactive Recharts line chart + event sidebar
         ├── GlucoseTable.js        # Tabular glucose readings
         ├── EventsPage.js          # Events list with classification badges
-        ├── EventDetailModal.js    # Event detail modal (chart, analysis, history)
+        ├── EventDetailModal.js    # Event detail modal (chart, overlapping events, analysis, history)
         ├── DailySummariesPage.js  # Daily summaries list + detail modal
         ├── NotesPage.js           # Samsung Notes browser
         ├── AiUsagePage.js         # AI usage dashboard (charts, logs, costs)
@@ -544,8 +579,8 @@ App.js SignalR listener
 
 ```yaml
 services:
-  sqlserver:    # SQL Server 2022 with health check
-  api:          # ASP.NET Core (depends on sqlserver healthy)
+  sqlserver:    # SQL Server 2022 with health check, /backup volume for .bak files
+  api:          # ASP.NET Core (depends on sqlserver healthy), /backup volume shared with sqlserver
   web:          # React + nginx (depends on api)
 ```
 
@@ -586,8 +621,8 @@ These are necessary for QuestPDF/SkiaSharp to generate PDF reports with proper f
 | Mount | Container Path | Mode | Purpose |
 |-------|---------------|------|---------|
 | `sqldata` (named) | `/var/opt/mssql` | RW | SQL Server data persistence |
-| `SAMSUNG_NOTES_PATH` | `/samsung-notes` | RO | Samsung Notes local database |
-| `BACKUP_PATH` | `/backup` | RW | Data backup output |
+| `SAMSUNG_NOTES_PATH` | `/samsung-notes` | RO | Samsung Notes local database (API only) |
+| `BACKUP_PATH` | `/backup` | RW | Data + DB backup (shared by API and SQL Server) |
 
 ---
 

@@ -55,8 +55,11 @@ builder.Services.AddSingleton<GlucoseFetchService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GlucoseFetchService>());
 builder.Services.AddSingleton<SamsungNotesSyncService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SamsungNotesSyncService>());
-builder.Services.AddHostedService<GlucoseEventAnalysisService>();
+builder.Services.AddSingleton<GlucoseEventAnalysisService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<GlucoseEventAnalysisService>());
 builder.Services.AddHostedService<DataBackupService>();
+builder.Services.AddSingleton<DatabaseBackupService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackupService>());
 builder.Services.AddSingleton<DailySummaryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DailySummaryService>());
 

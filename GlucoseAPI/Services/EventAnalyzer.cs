@@ -59,8 +59,17 @@ public class EventAnalyzer
             .OrderBy(r => r.Timestamp)
             .ToListAsync(ct);
 
+        // Find other events whose timestamps fall within this event's glucose window.
+        // These overlapping events may influence the glucose response and the AI should know about them.
+        var overlappingEvents = await _db.GlucoseEvents
+            .Where(e => e.Id != evt.Id
+                && e.EventTimestamp >= evt.PeriodStart
+                && e.EventTimestamp <= evt.PeriodEnd)
+            .OrderBy(e => e.EventTimestamp)
+            .ToListAsync(ct);
+
         // Build prompts
-        var (systemPrompt, userPrompt) = BuildEventPrompts(evt, readings, tz);
+        var (systemPrompt, userPrompt) = BuildEventPrompts(evt, readings, overlappingEvents, tz);
         const string modelName = "gpt-5-mini";
 
         // Call GPT via the abstracted client
@@ -138,7 +147,7 @@ public class EventAnalyzer
     // ────────────────────────────────────────────────────────────
 
     private static (string systemPrompt, string userPrompt) BuildEventPrompts(
-        GlucoseEvent evt, List<GlucoseReading> readings, TimeZoneInfo tz)
+        GlucoseEvent evt, List<GlucoseReading> readings, List<GlucoseEvent> overlappingEvents, TimeZoneInfo tz)
     {
         var sb = new StringBuilder();
 
@@ -183,6 +192,33 @@ public class EventAnalyzer
             sb.AppendLine("No glucose readings after the event.");
         }
 
+        // ── Overlapping events within the same glucose window ──
+        if (overlappingEvents.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("=== OTHER EVENTS IN THIS GLUCOSE WINDOW ===");
+            sb.AppendLine($"There are {overlappingEvents.Count} other event(s) within this event's glucose observation period.");
+            sb.AppendLine("These may have influenced the glucose response you see above.");
+            sb.AppendLine();
+
+            foreach (var other in overlappingEvents)
+            {
+                var otherLocalTime = TimeZoneConverter.ToLocal(other.EventTimestamp, tz);
+                var offset = other.EventTimestamp - evt.EventTimestamp;
+                var direction = offset.TotalMinutes >= 0 ? "after" : "before";
+                var absMinutes = Math.Abs(offset.TotalMinutes);
+
+                sb.AppendLine($"  • \"{other.NoteTitle}\" at {otherLocalTime:HH:mm} ({absMinutes:F0} min {direction} this event)");
+                if (!string.IsNullOrWhiteSpace(other.NoteContent))
+                    sb.AppendLine($"    Content: {Truncate(other.NoteContent, 200)}");
+                if (other.GlucoseAtEvent.HasValue)
+                    sb.AppendLine($"    Glucose at that event: {other.GlucoseAtEvent.Value} mg/dL");
+                if (other.AiClassification != null)
+                    sb.AppendLine($"    Classification: {other.AiClassification}");
+                sb.AppendLine();
+            }
+        }
+
         var glucoseDataText = sb.ToString();
 
         var systemPrompt = @"You are a diabetes management assistant analyzing glucose responses to food and activities. 
@@ -206,6 +242,13 @@ After the classification line, your analysis should include:
 5. **Overall Assessment**: Was this a mild, moderate, or significant glucose impact?
 6. **Practical Tip**: One actionable suggestion based on the data.
 
+OVERLAPPING EVENTS:
+If the data includes other events that occurred within the same glucose observation window, you MUST factor them into your analysis.
+For example, exercise shortly after a meal can blunt a glucose spike, while a sugary drink before a meal can elevate the baseline.
+- Mention the overlapping event(s) and explain how they likely influenced the glucose response.
+- Attribute the glucose pattern to the combined effect rather than the main event alone when appropriate.
+- If the overlapping event makes it difficult to isolate the main event's impact, state this clearly.
+
 Keep the analysis concise (2-3 short paragraphs), practical, and written in a friendly tone.
 Use mg/dL units. Format with markdown. Do not include a title heading.
 If the note content is unclear, analyze based on the glucose patterns alone.
@@ -222,6 +265,16 @@ All timestamps below are in the user's local time.";
 Please analyze this glucose response.";
 
         return (systemPrompt, userPrompt);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Text Helpers
+    // ────────────────────────────────────────────────────────────
+
+    private static string Truncate(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLength) return text;
+        return text[..maxLength] + "…";
     }
 
     // ────────────────────────────────────────────────────────────

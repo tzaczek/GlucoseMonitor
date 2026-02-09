@@ -35,12 +35,14 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 ### 🍽️ Meal & Activity Events
 - **Automatic correlation**: Samsung Notes from a designated folder (e.g., "Cukier") are automatically matched with glucose data based on timestamps. Each event captures at least 3 hours of post-event glucose data to ensure the full meal response is visible, even if another event occurs sooner. When the gap to the next event is longer than 3 hours, the period extends to cover it.
 - **Per-event glucose analysis**: For each meal/activity, the system captures glucose at the time of the event, the spike, min/max/average, peak time, and reading count.
+- **Overlapping event awareness**: When multiple events occur within the same 3-hour glucose window (e.g., a meal followed by exercise 30 minutes later), the AI is told about all of them and considers their combined effect on glucose. This prevents misleading analysis — for instance, if exercise blunted a meal spike, the AI will attribute the good recovery to the exercise rather than the food alone. Overlapping events are also shown on the event detail chart as muted reference lines, listed below the chart with classification, time, and glucose data, and are **clickable** to switch the modal to that event's detail view.
 - **AI-powered analysis**: Each event is analyzed by GPT, which provides:
   - Baseline assessment
   - Glucose response characterization
   - Spike analysis (mild/moderate/significant)
   - Recovery assessment
   - Overall impact rating
+  - Consideration of overlapping events and their influence
   - Practical, actionable tips
 - **Traffic-light classification**: Every event is classified as 🟢 **Good** (well-controlled response), 🟡 **Concerning** (moderate impact), or 🔴 **Problematic** (significant spike or poor recovery).
 - **Analysis history**: Every AI analysis run is saved with its glucose data snapshot, so you can see how the analysis evolved as more data became available.
@@ -97,11 +99,19 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **Per-source control**: API also supports syncing glucose data or notes independently.
 
 ### 💾 Automatic Data Backup
-- **Periodic backups** of all data: glucose readings (JSON + CSV), events, analysis history, daily summaries, daily summary snapshots, and AI usage logs.
+- **Periodic JSON/CSV backups** of all data: glucose readings (JSON + CSV), events, analysis history, daily summaries, daily summary snapshots, and AI usage logs.
 - **Timestamped snapshots**: Each backup run creates a uniquely named folder with a full data export.
 - **"Latest" symlink**: Always have a `latest/` folder pointing to the most recent backup.
-- **Auto-cleanup**: Backups older than 14 days are automatically removed.
+- **Auto-cleanup**: JSON/CSV backups older than 14 days are automatically removed.
 - **Local storage**: Backups are saved to a mounted Docker volume on your machine.
+
+### 🗄️ Database Backup & Restore
+- **Daily SQL Server backup**: A full compressed `.bak` database backup is created automatically once per day, stored in `/backup/db/`.
+- **Manual backup**: Trigger a backup at any time from the Settings page.
+- **Backup status**: The Settings page shows the last backup time, file name, size, number of stored backups, and any errors.
+- **Stored backup list**: View all stored backup files with size and creation date.
+- **One-click restore**: Restore the database from any stored backup file directly from the Settings page, with a confirmation dialog warning that all current data will be replaced.
+- **Auto-cleanup**: Database backups older than 7 days are automatically removed.
 
 ### ⚡ Real-Time Updates (SignalR)
 - **WebSocket connection**: All data updates — new glucose readings, new events, analysis completions, daily summaries, AI usage — are pushed to the browser in real time.
@@ -144,6 +154,7 @@ FreeStyle Libre Sensor
    │  │   GlucoseEventAnalysis     │──── Correlates notes → events, calls GPT
    │  │   DailySummaryService      │──── Aggregates days, calls GPT
    │  │   DataBackupService        │──── Periodic JSON/CSV export
+   │  │   DatabaseBackupService   │──── Daily SQL Server .bak backup/restore
    │  └───────────────────────────┘  │
    │            │                    │
    │     SQL Server Database         │

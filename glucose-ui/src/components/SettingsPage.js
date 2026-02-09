@@ -32,6 +32,9 @@ function SettingsPage() {
   });
   const [isConfigured, setIsConfigured] = useState(false);
   const [isAnalysisConfigured, setIsAnalysisConfigured] = useState(false);
+  const [backupStatus, setBackupStatus] = useState(null);
+  const [backingUp, setBackingUp] = useState(false);
+  const [backupMessage, setBackupMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingAnalysis, setSavingAnalysis] = useState(false);
@@ -46,9 +49,10 @@ function SettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const [settingsRes, analysisRes] = await Promise.all([
+      const [settingsRes, analysisRes, backupRes] = await Promise.all([
         fetch(`${API_BASE}/settings`),
         fetch(`${API_BASE}/settings/analysis`),
+        fetch(`${API_BASE}/settings/backup`),
       ]);
       if (settingsRes.ok) {
         const data = await settingsRes.json();
@@ -60,10 +64,53 @@ function SettingsPage() {
         setAnalysisSettings(data);
         setIsAnalysisConfigured(data.isConfigured);
       }
+      if (backupRes.ok) {
+        const data = await backupRes.json();
+        setBackupStatus(data);
+      }
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load settings.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const [restoring, setRestoring] = useState(null); // fileName being restored
+  const [confirmRestore, setConfirmRestore] = useState(null); // fileName pending confirmation
+
+  const handleTriggerBackup = async () => {
+    setBackingUp(true);
+    setBackupMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/settings/backup`, { method: 'POST' });
+      const data = await res.json();
+      setBackupMessage({ type: res.ok ? 'success' : 'error', text: data.message });
+      // Refresh backup status
+      const statusRes = await fetch(`${API_BASE}/settings/backup`);
+      if (statusRes.ok) setBackupStatus(await statusRes.json());
+    } catch (err) {
+      setBackupMessage({ type: 'error', text: 'Failed to trigger backup.' });
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const handleRestore = async (fileName) => {
+    setConfirmRestore(null);
+    setRestoring(fileName);
+    setBackupMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/settings/backup/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName }),
+      });
+      const data = await res.json();
+      setBackupMessage({ type: res.ok ? 'success' : 'error', text: data.message });
+    } catch (err) {
+      setBackupMessage({ type: 'error', text: 'Failed to restore from backup.' });
+    } finally {
+      setRestoring(null);
     }
   };
 
@@ -419,8 +466,130 @@ function SettingsPage() {
           </div>
         </form>
       </div>
+      {/* ── Database Backup ────────────────────────────── */}
+      <div className="settings-card" style={{ marginTop: 24 }}>
+        <div className="settings-header">
+          <h2>💾 Database Backup</h2>
+          <p>Full SQL Server database backups are created automatically once per day. Retained for 7 days.</p>
+        </div>
+
+        <div className="form-section">
+          <h3>Backup Status</h3>
+          {backupStatus ? (
+            <div className="backup-status-grid">
+              <div className="backup-stat">
+                <span className="backup-stat-label">Last Backup</span>
+                <span className="backup-stat-value">
+                  {backupStatus.lastBackupUtc
+                    ? new Date(backupStatus.lastBackupUtc).toLocaleString()
+                    : 'Never'}
+                </span>
+              </div>
+              <div className="backup-stat">
+                <span className="backup-stat-label">File</span>
+                <span className="backup-stat-value" style={{ fontSize: '0.8rem' }}>
+                  {backupStatus.lastBackupFile || '—'}
+                </span>
+              </div>
+              <div className="backup-stat">
+                <span className="backup-stat-label">Size</span>
+                <span className="backup-stat-value">
+                  {backupStatus.lastBackupSizeBytes != null
+                    ? formatBytes(backupStatus.lastBackupSizeBytes)
+                    : '—'}
+                </span>
+              </div>
+              <div className="backup-stat">
+                <span className="backup-stat-label">Backups Stored</span>
+                <span className="backup-stat-value">
+                  {backupStatus.backupCount} ({formatBytes(backupStatus.totalSizeBytes)})
+                </span>
+              </div>
+              {backupStatus.lastError && (
+                <div className="backup-stat" style={{ gridColumn: '1 / -1' }}>
+                  <span className="backup-stat-label" style={{ color: 'var(--red)' }}>Last Error</span>
+                  <span className="backup-stat-value" style={{ color: 'var(--red)', fontSize: '0.8rem' }}>
+                    {backupStatus.lastError}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Loading backup status...</p>
+          )}
+
+          {backupStatus?.backups?.length > 0 && (
+            <div className="backup-file-list">
+              <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '16px 0 8px' }}>Stored Backups</h4>
+              {backupStatus.backups.map((b) => (
+                <div key={b.fileName} className="backup-file-item">
+                  <span className="backup-file-name">{b.fileName}</span>
+                  <span className="backup-file-size">{formatBytes(b.size)}</span>
+                  <span className="backup-file-date">{new Date(b.createdUtc).toLocaleString()}</span>
+                  <button
+                    className="btn-restore"
+                    onClick={() => setConfirmRestore(b.fileName)}
+                    disabled={!!restoring || backingUp}
+                    title="Restore database from this backup"
+                  >
+                    {restoring === b.fileName ? '⏳' : '↩'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Restore confirmation dialog */}
+          {confirmRestore && (
+            <div className="restore-confirm-overlay" onClick={() => setConfirmRestore(null)}>
+              <div className="restore-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+                <h3>⚠️ Restore Database</h3>
+                <p>
+                  Are you sure you want to restore the database from<br />
+                  <strong>{confirmRestore}</strong>?
+                </p>
+                <p className="restore-warning">
+                  This will <strong>replace all current data</strong> with the data from this backup.
+                  This action cannot be undone.
+                </p>
+                <div className="restore-confirm-actions">
+                  <button className="btn-cancel" onClick={() => setConfirmRestore(null)}>Cancel</button>
+                  <button className="btn-danger" onClick={() => handleRestore(confirmRestore)}>
+                    Restore Database
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {backupMessage && (
+          <div className={`message ${backupMessage.type}`}>
+            {backupMessage.text}
+          </div>
+        )}
+
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn-save"
+            onClick={handleTriggerBackup}
+            disabled={backingUp || backupStatus?.isRunning}
+          >
+            {backingUp || backupStatus?.isRunning ? '⏳ Backing up...' : '💾 Backup Now'}
+          </button>
+        </div>
+      </div>
     </div>
   );
+}
+
+function formatBytes(bytes) {
+  if (bytes == null || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 export default SettingsPage;

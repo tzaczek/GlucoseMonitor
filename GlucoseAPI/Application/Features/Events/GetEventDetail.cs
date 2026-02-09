@@ -33,6 +33,14 @@ public class GetEventDetailHandler : IRequestHandler<GetEventDetailQuery, Glucos
             .OrderByDescending(h => h.AnalyzedAt)
             .ToListAsync(ct);
 
+        // Find other events whose timestamps fall within this event's glucose window
+        var overlappingEvents = await _db.GlucoseEvents
+            .Where(e => e.Id != evt.Id
+                && e.EventTimestamp >= evt.PeriodStart
+                && e.EventTimestamp <= evt.PeriodEnd)
+            .OrderBy(e => e.EventTimestamp)
+            .ToListAsync(ct);
+
         return new GlucoseEventDetailDto
         {
             Id = evt.Id,
@@ -55,7 +63,16 @@ public class GetEventDetailHandler : IRequestHandler<GetEventDetailQuery, Glucos
                 ? DateTime.SpecifyKind(evt.ProcessedAt.Value, DateTimeKind.Utc)
                 : null,
             Readings = readings.Select(GetLatestReadingHandler.MapToDto).ToList(),
-            AnalysisHistory = analysisHistory.Select(MapHistoryDto).ToList()
+            AnalysisHistory = analysisHistory.Select(MapHistoryDto).ToList(),
+            OverlappingEvents = overlappingEvents.Select(e => new OverlappingEventDto
+            {
+                Id = e.Id,
+                NoteTitle = e.NoteTitle,
+                NoteContent = e.NoteContent,
+                EventTimestamp = DateTime.SpecifyKind(e.EventTimestamp, DateTimeKind.Utc),
+                GlucoseAtEvent = e.GlucoseAtEvent,
+                AiClassification = e.AiClassification
+            }).ToList()
         };
     }
 

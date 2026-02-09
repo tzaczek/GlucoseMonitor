@@ -17,15 +17,18 @@ public class TriggerFullSyncHandler : IRequestHandler<TriggerFullSyncCommand, Tr
 {
     private readonly GlucoseFetchService _glucoseFetch;
     private readonly SamsungNotesSyncService _notesSync;
+    private readonly GlucoseEventAnalysisService _eventAnalysis;
     private readonly ILogger<TriggerFullSyncHandler> _logger;
 
     public TriggerFullSyncHandler(
         GlucoseFetchService glucoseFetch,
         SamsungNotesSyncService notesSync,
+        GlucoseEventAnalysisService eventAnalysis,
         ILogger<TriggerFullSyncHandler> logger)
     {
         _glucoseFetch = glucoseFetch;
         _notesSync = notesSync;
+        _eventAnalysis = eventAnalysis;
         _logger = logger;
     }
 
@@ -58,6 +61,19 @@ public class TriggerFullSyncHandler : IRequestHandler<TriggerFullSyncCommand, Tr
         {
             _logger.LogError(ex, "Notes sync failed during manual trigger.");
             results.Add(new SyncSourceResult("Notes", false, ex.Message));
+        }
+
+        // Process events from synced notes (create events + run AI analysis)
+        try
+        {
+            await _eventAnalysis.TriggerProcessingAsync(ct);
+            results.Add(new SyncSourceResult("Events", true, "Event processing completed."));
+            _logger.LogInformation("Event processing completed after sync.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Event processing failed during manual trigger.");
+            results.Add(new SyncSourceResult("Events", false, ex.Message));
         }
 
         var allSuccess = results.All(r => r.Success);

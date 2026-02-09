@@ -232,6 +232,18 @@ public class GlucoseEventDetailDto
     public DateTime? ProcessedAt { get; set; }
     public List<GlucoseReadingDto> Readings { get; set; } = new();
     public List<EventAnalysisHistoryDto> AnalysisHistory { get; set; } = new();
+    public List<OverlappingEventDto> OverlappingEvents { get; set; } = new();
+}
+
+/// <summary>Lightweight DTO for events that overlap with the current event's glucose window.</summary>
+public class OverlappingEventDto
+{
+    public int Id { get; set; }
+    public string NoteTitle { get; set; } = string.Empty;
+    public string? NoteContent { get; set; }
+    public DateTime EventTimestamp { get; set; }
+    public double? GlucoseAtEvent { get; set; }
+    public string? AiClassification { get; set; }
 }
 
 /// <summary>DTO for a single analysis history entry (includes glucose stats snapshot).</summary>
