@@ -25,6 +25,10 @@ public class GlucoseEventAnalysisService : BackgroundService
     private static readonly TimeSpan DefaultLookback = TimeSpan.FromHours(3);
     private static readonly TimeSpan DefaultLookahead = TimeSpan.FromHours(4);
 
+    // Minimum post-event window: always capture at least 3 hours of glucose data after an event,
+    // even if the next event occurs sooner. This ensures the full post-meal response is visible.
+    private static readonly TimeSpan MinimumLookahead = TimeSpan.FromHours(3);
+
     public GlucoseEventAnalysisService(
         IServiceProvider serviceProvider,
         ILogger<GlucoseEventAnalysisService> logger,
@@ -201,8 +205,11 @@ public class GlucoseEventAnalysisService : BackgroundService
                 ? DateTime.SpecifyKind(prevNote.ModifiedAt, DateTimeKind.Utc)
                 : eventTimestamp - DefaultLookback;
 
+            // PeriodEnd: always at least MinimumLookahead (3h) after the event.
+            // If the next note is further away, extend to the next note's timestamp.
+            var minimumEnd = eventTimestamp + MinimumLookahead;
             var periodEnd = nextNote != null
-                ? DateTime.SpecifyKind(nextNote.ModifiedAt, DateTimeKind.Utc)
+                ? MaxDateTime(minimumEnd, DateTime.SpecifyKind(nextNote.ModifiedAt, DateTimeKind.Utc))
                 : eventTimestamp + DefaultLookahead;
 
             // ── Re-analyse the previous event ──────────────────────
@@ -213,7 +220,9 @@ public class GlucoseEventAnalysisService : BackgroundService
 
                 if (prevEvent != null)
                 {
-                    var newPeriodEnd = eventTimestamp;
+                    // Ensure previous event keeps at least MinimumLookahead (3h) of glucose data,
+                    // or extends to the new event's timestamp if that's further away.
+                    var newPeriodEnd = MaxDateTime(prevEvent.EventTimestamp + MinimumLookahead, eventTimestamp);
                     if (prevEvent.PeriodEnd != newPeriodEnd)
                     {
                         _logger.LogInformation(
@@ -310,6 +319,12 @@ public class GlucoseEventAnalysisService : BackgroundService
         evt.GlucoseSpike = stats.Spike;
         evt.PeakTime = stats.PeakTime;
     }
+
+    // ────────────────────────────────────────────────────────────
+    // Helpers
+    // ────────────────────────────────────────────────────────────
+
+    private static DateTime MaxDateTime(DateTime a, DateTime b) => a > b ? a : b;
 
     // ────────────────────────────────────────────────────────────
     // Batch AI Analysis (delegates to EventAnalyzer per event)
