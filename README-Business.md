@@ -54,8 +54,10 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **AI daily analysis**: GPT generates a comprehensive daily summary covering:
   - Overall glucose control assessment
   - Key metrics commentary
+  - **Overnight analysis** (00:00–06:00): glucose stability, nocturnal highs/lows, overnight trend direction
+  - **Morning glucose** (06:00–09:00): fasting glucose level, dawn phenomenon detection (compares pre-dawn vs early morning averages), and **pre-diabetes flag** — if fasting average is ≥100 mg/dL, it is flagged as a potential indicator of impaired fasting glucose (100–125 mg/dL = pre-diabetes, ≥126 mg/dL = possible diabetes)
   - Meal/activity impact analysis
-  - Patterns and trends (overnight, dawn phenomenon, post-meal)
+  - Patterns and trends (post-meal, afternoon dips, evening trends)
   - Best and worst periods of the day
   - 2–3 actionable improvement suggestions
 - **Day classification**: Each day is classified as 🟢 **Good Day**, 🟡 **Concerning**, or 🔴 **Difficult Day**.

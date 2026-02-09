@@ -347,8 +347,12 @@ Loop:
      a. Convert local midnight boundaries → UTC
      b. Query all readings and events within the day
      c. Compute day-level stats (avg, std dev, time-in-range, etc.)
-     d. Upsert DailySummary row
-     e. Call GPT API with full day data (hourly profile, events, timeline)
+     d. Compute overnight stats (00:00–06:00): avg, range, std dev, trend direction
+     e. Compute morning stats (06:00–09:00): fasting glucose, avg, range,
+        dawn phenomenon detection (03:00–04:00 vs 06:00–07:00),
+        pre-diabetes flag if fasting avg ≥100 mg/dL
+     f. Upsert DailySummary row
+     g. Call GPT API with full day data (overnight, morning, hourly profile, events, timeline)
      f. Parse [CLASSIFICATION: green/yellow/red]
      g. Create DailySummarySnapshot (immutable history)
      h. Log to AiUsageLogs
@@ -429,7 +433,7 @@ Loop:
 - **Classification parsing**: The AI is instructed to begin each response with `[CLASSIFICATION: green|yellow|red]`. This is parsed by the domain service `ClassificationParser.Parse()` using a compiled regex, then stripped from the stored analysis text. Classification is stored in a separate `AiClassification` column.
 - **Glucose stats**: Computed by the domain service `GlucoseStatsCalculator` — centralizing the logic that was previously duplicated across services.
 - **Event analysis prompt**: Includes before/after glucose readings, note content, and glucose statistics. Asks for baseline assessment, response analysis, spike analysis, recovery, overall assessment, and a practical tip.
-- **Daily summary prompt**: Includes full-day overview, hourly glucose profile, event-by-event breakdown, and a sampled glucose timeline. Asks for day overview, key metrics, meal impacts, patterns, best/worst moments, and actionable insights.
+- **Daily summary prompt**: Includes full-day overview, dedicated overnight glucose analysis (00:00–06:00) with trend detection, morning glucose analysis (06:00–09:00) with dawn phenomenon detection and fasting glucose pre-diabetes flag (≥100 mg/dL), hourly glucose profile, event-by-event breakdown, and a sampled glucose timeline. Asks for day overview, key metrics, overnight analysis, morning glucose, meal impacts, patterns, best/worst moments, and actionable insights.
 - **Usage logging**: Every API call (success or failure) is logged to `AiUsageLogs` with model name, token counts, HTTP status, finish reason, and duration. Clients are notified via `INotificationService.NotifyAiUsageUpdatedAsync()`.
 - **Cost estimation**: `AiUsageController` maintains a static pricing dictionary for known models and computes estimated cost per call and in aggregate.
 

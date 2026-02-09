@@ -385,6 +385,84 @@ public class DailySummaryService : BackgroundService
             }
         }
 
+        // Overnight analysis (00:00–06:00)
+        var nightReadings = readings
+            .Where(r => { var h = TimeZoneConverter.ToLocal(r.Timestamp, tz).Hour; return h >= 0 && h < 6; })
+            .ToList();
+        sb.AppendLine("=== OVERNIGHT GLUCOSE (00:00–06:00) ===");
+        if (nightReadings.Count > 0)
+        {
+            var nightAvg = Math.Round(nightReadings.Average(r => r.Value), 1);
+            var nightMin = nightReadings.Min(r => r.Value);
+            var nightMax = nightReadings.Max(r => r.Value);
+            var nightStdDev = nightReadings.Count > 1
+                ? Math.Round(Math.Sqrt(nightReadings.Average(r => Math.Pow(r.Value - nightAvg, 2))), 1)
+                : 0.0;
+            sb.AppendLine($"  Readings: {nightReadings.Count}");
+            sb.AppendLine($"  Average: {nightAvg} mg/dL");
+            sb.AppendLine($"  Range: {nightMin}–{nightMax} mg/dL");
+            sb.AppendLine($"  Std deviation: {nightStdDev} mg/dL");
+
+            // Detect overnight trend direction
+            var firstNight = nightReadings.First().Value;
+            var lastNight = nightReadings.Last().Value;
+            var nightDelta = lastNight - firstNight;
+            sb.AppendLine($"  Trend: {firstNight} → {lastNight} mg/dL ({(nightDelta >= 0 ? "+" : "")}{nightDelta:F0} mg/dL)");
+        }
+        else
+        {
+            sb.AppendLine("  No overnight readings available.");
+        }
+        sb.AppendLine();
+
+        // Morning glucose (06:00–09:00) — fasting / waking glucose
+        var morningReadings = readings
+            .Where(r => { var h = TimeZoneConverter.ToLocal(r.Timestamp, tz).Hour; return h >= 6 && h < 9; })
+            .ToList();
+        sb.AppendLine("=== MORNING GLUCOSE (06:00–09:00) ===");
+        if (morningReadings.Count > 0)
+        {
+            var morningAvg = Math.Round(morningReadings.Average(r => r.Value), 1);
+            var morningMin = morningReadings.Min(r => r.Value);
+            var morningMax = morningReadings.Max(r => r.Value);
+            var firstMorning = morningReadings.First();
+            var firstMorningLocal = TimeZoneConverter.ToLocal(firstMorning.Timestamp, tz);
+            sb.AppendLine($"  First morning reading: {firstMorning.Value} mg/dL at {firstMorningLocal:HH:mm}");
+            sb.AppendLine($"  Readings: {morningReadings.Count}");
+            sb.AppendLine($"  Average: {morningAvg} mg/dL");
+            sb.AppendLine($"  Range: {morningMin}–{morningMax} mg/dL");
+
+            // Fasting glucose pre-diabetes flag
+            if (morningAvg >= 100)
+            {
+                sb.AppendLine($"  ⚠️ ELEVATED FASTING GLUCOSE: Morning average {morningAvg} mg/dL is ≥100 mg/dL.");
+                sb.AppendLine("     Fasting glucose 100–125 mg/dL is classified as pre-diabetes (impaired fasting glucose).");
+                sb.AppendLine("     Fasting glucose ≥126 mg/dL may indicate diabetes. Consult a healthcare provider.");
+            }
+
+            // Dawn phenomenon detection: compare 03:00-04:00 avg vs 06:00-07:00 avg
+            var preDawnReadings = readings
+                .Where(r => { var h = TimeZoneConverter.ToLocal(r.Timestamp, tz).Hour; return h >= 3 && h < 4; })
+                .ToList();
+            var earlyMorningReadings = morningReadings
+                .Where(r => TimeZoneConverter.ToLocal(r.Timestamp, tz).Hour < 7)
+                .ToList();
+            if (preDawnReadings.Count > 0 && earlyMorningReadings.Count > 0)
+            {
+                var preDawnAvg = Math.Round(preDawnReadings.Average(r => r.Value), 1);
+                var earlyMorningAvg = Math.Round(earlyMorningReadings.Average(r => r.Value), 1);
+                var dawnRise = earlyMorningAvg - preDawnAvg;
+                sb.AppendLine($"  Pre-dawn avg (03:00–04:00): {preDawnAvg} mg/dL");
+                sb.AppendLine($"  Early morning avg (06:00–07:00): {earlyMorningAvg} mg/dL");
+                sb.AppendLine($"  Dawn rise: {(dawnRise >= 0 ? "+" : "")}{dawnRise:F0} mg/dL");
+            }
+        }
+        else
+        {
+            sb.AppendLine("  No morning readings available.");
+        }
+        sb.AppendLine();
+
         // Hourly glucose profile
         sb.AppendLine("=== HOURLY GLUCOSE PROFILE ===");
         if (readings.Count > 0)
@@ -430,15 +508,17 @@ Classification guide for the overall day:
 - **yellow**: Concerning day. Time in range 50-70%, some notable spikes, moderate variability, or brief periods out of range.
 - **red**: Difficult day. Time in range <50%, significant spikes, high variability, hypoglycemia episodes, or extended time above range.
 
-After the classification line, your daily summary should include:
+After the classification line, your daily summary should include these sections (use the exact bold headings):
 1. **Day Overview**: Overall glucose control assessment for the day. Was it a good, moderate, or difficult day?
 2. **Key Metrics**: Comment on time in range, average glucose, and variability (standard deviation).
-3. **Meal/Activity Impacts**: Summarize how each logged event affected glucose levels. Which meals caused the biggest spikes?
-4. **Patterns & Trends**: Note any patterns — overnight trends, dawn phenomenon, post-meal patterns, afternoon dips, etc.
-5. **Best & Worst Moments**: Identify the best-controlled period and the most challenging period of the day.
-6. **Actionable Insights**: 2-3 specific, practical suggestions for improving glucose control based on the day's data.
+3. **Overnight Analysis**: Dedicated analysis of the overnight period (00:00–06:00). Was glucose stable, rising, or falling? Any nocturnal highs or lows? Comment on the overnight trend and variability. If no overnight data is available, note that.
+4. **Morning Glucose**: Analyze the morning period (06:00–09:00). What was the fasting/waking glucose level? Is there evidence of the dawn phenomenon (glucose rise between ~03:00–07:00)? How does the morning glucose compare to the target range? **Important**: If the morning fasting average is ≥100 mg/dL, explicitly flag this as a potential pre-diabetes indicator (impaired fasting glucose is 100–125 mg/dL; ≥126 mg/dL may indicate diabetes). Recommend consulting a healthcare provider if this pattern is recurring. If no morning data is available, note that.
+5. **Meal/Activity Impacts**: Summarize how each logged event affected glucose levels. Which meals caused the biggest spikes?
+6. **Patterns & Trends**: Note any additional patterns — post-meal patterns, afternoon dips, evening trends, etc.
+7. **Best & Worst Moments**: Identify the best-controlled period and the most challenging period of the day.
+8. **Actionable Insights**: 2-3 specific, practical suggestions for improving glucose control based on the day's data.
 
-Keep the summary concise but comprehensive (3-5 paragraphs). Use markdown formatting.
+Keep the summary concise but comprehensive. Use markdown formatting.
 Do not include a title heading. Use mg/dL units. All timestamps are in the user's local time.
 Write in a friendly, supportive tone — like a knowledgeable health coach.";
 
