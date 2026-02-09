@@ -315,9 +315,13 @@ Loop:
   1. Load notes from the configured folder (e.g., "Cukier")
   2. Find notes not yet turned into GlucoseEvents
   3. For each new note:
-     a. Calculate PeriodStart = previous note's timestamp (or -3h)
-     b. Calculate PeriodEnd = next note's timestamp (or +4h)
-     c. Update the PREVIOUS event's PeriodEnd (boundary shifted)
+     a. Calculate PeriodStart = previous note's timestamp (or -3h if no previous note)
+     b. Calculate PeriodEnd = max(event + 3h, next note's timestamp) or +4h if no next note
+        → Always captures at least 3 hours of post-event glucose data (MinimumLookahead),
+          ensuring the full post-meal response is visible even when the next event is sooner.
+          If the next event is further than 3h away, the period extends to cover the gap.
+     c. Update the PREVIOUS event's PeriodEnd = max(prevEvent + 3h, current event timestamp)
+        → Previous event also keeps at least 3h of glucose data; periods may overlap.
      d. Recompute previous event's glucose stats → mark for re-analysis
      e. Create new GlucoseEvent with computed stats
   4. Run AI analysis for all unanalyzed events (via EventAnalyzer):

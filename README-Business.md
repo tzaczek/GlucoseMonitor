@@ -33,7 +33,7 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **CSV export** for any time period.
 
 ### 🍽️ Meal & Activity Events
-- **Automatic correlation**: Samsung Notes from a designated folder (e.g., "Cukier") are automatically matched with glucose data based on timestamps.
+- **Automatic correlation**: Samsung Notes from a designated folder (e.g., "Cukier") are automatically matched with glucose data based on timestamps. Each event captures at least 3 hours of post-event glucose data to ensure the full meal response is visible, even if another event occurs sooner. When the gap to the next event is longer than 3 hours, the period extends to cover it.
 - **Per-event glucose analysis**: For each meal/activity, the system captures glucose at the time of the event, the spike, min/max/average, peak time, and reading count.
 - **AI-powered analysis**: Each event is analyzed by GPT, which provides:
   - Baseline assessment
