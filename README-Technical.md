@@ -339,8 +339,11 @@ Loop:
 Startup delay: 60 seconds
 Loop:
   1. Find date range with glucose data (earliest reading → yesterday)
-  2. Skip days that already have IsProcessed=true summaries
-  3. For each unprocessed day:
+  2. Detect partial past days: any processed summary whose PeriodEndUtc is
+     more than 5 minutes before the actual end-of-day boundary was generated
+     from incomplete data and is queued for regeneration with full-day data.
+  3. Skip days that already have IsProcessed=true summaries (unless partial)
+  4. For each unprocessed or partial day:
      a. Convert local midnight boundaries → UTC
      b. Query all readings and events within the day
      c. Compute day-level stats (avg, std dev, time-in-range, etc.)
@@ -349,7 +352,7 @@ Loop:
      f. Parse [CLASSIFICATION: green/yellow/red]
      g. Create DailySummarySnapshot (immutable history)
      h. Log to AiUsageLogs
-  4. SignalR → "DailySummariesUpdated", "AiUsageUpdated"
+  5. SignalR → "DailySummariesUpdated", "AiUsageUpdated"
 
 Manual trigger (POST /api/dailysummaries/trigger):
   - Same logic but includeToday=true

@@ -113,32 +113,31 @@ public class DailySummaryService : BackgroundService
 
         var existingDateSet = new HashSet<DateTime>(existingSummaries.Select(s => s.Date.Date));
 
-        // For manual trigger: also detect past days that were generated with partial data.
+        // Detect past days that were generated with partial data.
         // A summary is "partial" if its PeriodEndUtc is earlier than the actual end-of-day boundary,
         // meaning it was generated while the day was still in progress (e.g. triggered as "today").
+        // This runs for both automatic and manual triggers so that partial days are always
+        // regenerated once the full day's data is available.
         var partialDates = new HashSet<DateTime>();
-        if (includeToday)
+        foreach (var s in existingSummaries)
         {
-            foreach (var s in existingSummaries)
+            var date = s.Date.Date;
+            if (date >= now.Date) continue; // today is handled separately; skip future dates too
+
+            var (_, fullDayEndUtc) = TimeZoneConverter.GetDayBoundariesUtc(date, tz);
+
+            // If the stored PeriodEndUtc is more than 5 minutes before the real end-of-day,
+            // this summary was generated from incomplete data and should be regenerated.
+            if (s.PeriodEndUtc < fullDayEndUtc.AddMinutes(-5))
             {
-                var date = s.Date.Date;
-                if (date == now.Date) continue; // today is always regenerated separately
-
-                var (_, fullDayEndUtc) = TimeZoneConverter.GetDayBoundariesUtc(date, tz);
-
-                // If the stored PeriodEndUtc is more than 5 minutes before the real end-of-day,
-                // this summary was generated from incomplete data and should be regenerated.
-                if (s.PeriodEndUtc < fullDayEndUtc.AddMinutes(-5))
-                {
-                    partialDates.Add(date);
-                }
+                partialDates.Add(date);
             }
+        }
 
-            if (partialDates.Count > 0)
-            {
-                _logger.LogInformation("Found {Count} previously partial day(s) to regenerate: {Dates}",
-                    partialDates.Count, string.Join(", ", partialDates.OrderBy(d => d).Select(d => d.ToString("yyyy-MM-dd"))));
-            }
+        if (partialDates.Count > 0)
+        {
+            _logger.LogInformation("Found {Count} previously partial day(s) to regenerate: {Dates}",
+                partialDates.Count, string.Join(", ", partialDates.OrderBy(d => d).Select(d => d.ToString("yyyy-MM-dd"))));
         }
 
         // Find days that need summaries
