@@ -59,6 +59,7 @@ GlucoseAPI/
 │       ├── Glucose/                    # GetLatestReading, GetHistory, GetStats, GetDates
 │       ├── Events/                     # GetEvents, GetEventDetail, GetStatus, Reprocess
 │       ├── Comparisons/               # CreateComparison, GetComparisons, GetDetail, Delete
+│       ├── PeriodSummaries/           # CreatePeriodSummary, GetPeriodSummaries, GetDetail, Delete
 │       ├── DailySummaries/             # GetSummaries, GetDetail, GetStatus, GetSnapshot, Trigger
 │       ├── Notes/                      # GetNotes, GetNote, GetFolders, GetStatus, Media
 │       ├── AiUsage/                    # GetLogs, GetSummary, GetPricing
@@ -77,6 +78,7 @@ GlucoseAPI/
 │   ├── GlucoseController.cs      # /api/glucose/* — readings, stats, history
 │   ├── EventsController.cs       # /api/events/* — meal/activity events
 │   ├── ComparisonController.cs  # /api/comparison/* — period comparisons
+│   ├── PeriodSummaryController.cs # /api/periodsummary/* — arbitrary period summaries
 │   ├── DailySummariesController.cs # /api/dailysummaries/* — daily summaries
 │   ├── NotesController.cs        # /api/notes/* — Samsung Notes
 │   ├── SettingsController.cs     # /api/settings/* — LibreLink + analysis config
@@ -94,6 +96,7 @@ GlucoseAPI/
 │   ├── GlucoseReading.cs         # CGM reading (value, timestamp, trend)
 │   ├── GlucoseEvent.cs           # Meal/activity event + AI analysis + history
 │   ├── GlucoseComparison.cs     # Period comparison entity + DTOs
+│   ├── PeriodSummary.cs         # Arbitrary period summary entity + DTOs
 │   ├── DailySummary.cs           # Daily aggregation entity
 │   ├── DailySummarySnapshot.cs   # Immutable snapshot per generation run
 │   ├── SamsungNote.cs            # Synced Samsung Notes metadata
@@ -109,6 +112,7 @@ GlucoseAPI/
     ├── DailySummaryService.cs    # Generates daily summaries with GPT analysis
     ├── DataBackupService.cs      # Periodic JSON/CSV backup to local filesystem
     ├── ComparisonService.cs      # Background: processes period comparisons with AI
+    ├── PeriodSummaryService.cs  # Background: processes arbitrary period summaries with AI
     ├── DatabaseBackupService.cs  # Daily SQL Server .bak backup + manual trigger/restore
     ├── ReportService.cs          # Generates PDF reports using QuestPDF + SkiaSharp
     ├── LibreLinkClient.cs        # Unofficial LibreLink Up HTTP client
@@ -173,6 +177,8 @@ Program.cs registers:
   Singleton + HostedService (callable from controllers/handlers):
     - ComparisonService          — processes period comparisons in background
       (Enqueue from CreateComparison handler, processes queue, calls GPT)
+    - PeriodSummaryService       — processes arbitrary period summaries in background
+      (Enqueue from CreatePeriodSummary handler, processes queue, calls GPT)
     - DatabaseBackupService      — daily SQL Server .bak backup (retained 7 days)
       (TriggerBackupAsync / RestoreFromBackupAsync for manual backup/restore via Settings)
 
@@ -281,6 +287,22 @@ The database is created via `EnsureCreated()` at startup, with additional `ALTER
 └──────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────┐
+│          PeriodSummaries                      │
+│──────────────────────────────────────────────│
+│ Id (PK)                                      │
+│ Name (optional label)                        │
+│ PeriodStart, PeriodEnd (UTC)                 │
+│ TimeZone                                     │
+│ ReadingCount, GlucoseMin, GlucoseMax,        │
+│   GlucoseAvg, GlucoseStdDev                 │
+│ TimeInRange, TimeAboveRange, TimeBelowRange  │
+│ EventCount, EventIds, EventTitles            │
+│ AiAnalysis, AiClassification                 │
+│ Status (pending/processing/completed/failed) │
+│ ErrorMessage, CreatedAt, CompletedAt         │
+└──────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────┐
 │            AiUsageLogs                        │
 │──────────────────────────────────────────────│
 │ Id (PK)                                      │
@@ -305,6 +327,7 @@ The database is created via `EnsureCreated()` at startup, with additional `ALTER
 - `EventAnalysisHistory`: GlucoseEventId, AnalyzedAt
 - `AiUsageLogs`: CalledAt, GlucoseEventId, Model
 - `GlucoseComparisons`: Status, CreatedAt
+- `PeriodSummaries`: Status, CreatedAt
 - `DailySummaries`: Date (unique), IsProcessed
 - `DailySummarySnapshots`: DailySummaryId, Date, GeneratedAt
 
@@ -434,7 +457,29 @@ Created via POST /api/comparison:
   - Calls ComparisonService.Enqueue(id)
 ```
 
-#### 7. DatabaseBackupService (once per day)
+#### 7. PeriodSummaryService (on-demand queue)
+```
+Startup:
+  - Re-queues any period summaries left in "pending" or "processing" state (crash recovery)
+Queue processing (event-driven, not polling):
+  1. Wait for signal (SemaphoreSlim)
+  2. Dequeue period summary ID
+  3. Set status = "processing", notify UI via SignalR
+  4. Gather glucose readings + events for the requested time range
+  5. Compute day-level stats (min, max, avg, stddev, time in range)
+  6. Build AI prompt with period stats, events, and sampled glucose timeline
+  7. Call GPT API for comprehensive period analysis
+  8. Parse [CLASSIFICATION: green/yellow/red]
+  9. Save results, set status = "completed"
+  10. SignalR → "PeriodSummariesUpdated", "AiUsageUpdated"
+  On failure: set status = "failed" with error message
+
+Created via POST /api/periodsummary:
+  - CreatePeriodSummaryHandler inserts row with status = "pending"
+  - Calls PeriodSummaryService.Enqueue(id)
+```
+
+#### 8. DatabaseBackupService (once per day)
 ```
 Startup delay: 3 minutes
 On startup:
@@ -474,6 +519,10 @@ Manual restore (POST /api/settings/backup/restore):
 | GET | `/api/comparison/{id}` | Comparison detail + readings + events + AI |
 | POST | `/api/comparison` | Create new comparison (queued for background processing) |
 | DELETE | `/api/comparison/{id}` | Delete a comparison |
+| GET | `/api/periodsummary` | List all period summaries |
+| GET | `/api/periodsummary/{id}` | Period summary detail + readings + events + AI |
+| POST | `/api/periodsummary` | Create new period summary (queued for background processing) |
+| DELETE | `/api/periodsummary/{id}` | Delete a period summary |
 | GET | `/api/dailysummaries` | List all daily summaries |
 | GET | `/api/dailysummaries/{id}` | Daily summary detail + events + readings + snapshots |
 | GET | `/api/dailysummaries/status` | Processing status |
@@ -511,7 +560,8 @@ Manual restore (POST /api/settings/backup/restore):
 | `EventsUpdated` | count (int) | EventAnalyzer, GlucoseEventAnalysisService, GlucoseFetchService |
 | `DailySummariesUpdated` | count (int) | DailySummaryService after generating a summary |
 | `ComparisonsUpdated` | count (int) | ComparisonService after processing a comparison |
-| `AiUsageUpdated` | count (int) | EventAnalyzer, DailySummaryService, ComparisonService after API calls |
+| `PeriodSummariesUpdated` | count (int) | PeriodSummaryService after processing a period summary |
+| `AiUsageUpdated` | count (int) | EventAnalyzer, DailySummaryService, ComparisonService, PeriodSummaryService after API calls |
 
 ### AI Integration (OpenAI GPT)
 
@@ -581,6 +631,7 @@ glucose-ui/
         ├── EventDetailModal.js    # Event detail modal (chart, overlapping events, analysis, history)
         ├── DailySummariesPage.js  # Daily summaries list + detail modal
         ├── ComparePage.js         # Period comparison (form, chart overlay, AI analysis)
+        ├── PeriodSummaryPage.js   # Arbitrary period summaries (presets, custom, chart, AI analysis)
         ├── NotesPage.js           # Samsung Notes browser
         ├── AiUsagePage.js         # AI usage dashboard (charts, logs, costs)
         ├── ReportsPage.js         # PDF report generation with date range selector
@@ -589,7 +640,7 @@ glucose-ui/
 
 ### Key Design Decisions
 
-1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Compare, Notes, AI Usage, Reports, Settings.
+1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Summaries, Compare, Notes, AI Usage, Reports, Settings.
 2. **SignalR → Custom Events**: The SignalR connection lives in `App.js`. Events like `NotesUpdated` and `EventsUpdated` are re-dispatched as `window.dispatchEvent(new CustomEvent(...))` so child components can listen independently without prop drilling.
 3. **AI Usage versioning**: The `AiUsageUpdated` SignalR event increments an `aiUsageVersion` counter in App.js. The `AiUsagePage` component receives this as a React `key` prop, forcing a complete remount and fresh data fetch — solving the problem of browser-cached API responses.
 4. **Cache busting**: AI usage API calls use `{ cache: 'no-store' }` to prevent browser HTTP caching.
@@ -623,6 +674,8 @@ App.js SignalR listener
     │       └──▶ DailySummariesPage listens → reloads summaries
     ├──▶ ComparisonsUpdated → window.dispatchEvent('comparisonsUpdated')
     │       └──▶ ComparePage listens → reloads list + refreshes detail
+    ├──▶ PeriodSummariesUpdated → window.dispatchEvent('periodSummariesUpdated')
+    │       └──▶ PeriodSummaryPage listens → reloads list + refreshes detail
     └──▶ AiUsageUpdated → setAiUsageVersion(v => v + 1)
             └──▶ AiUsagePage key={version} → remount → fresh fetch
 ```

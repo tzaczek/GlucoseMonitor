@@ -99,6 +99,24 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **Persistent history**: All comparisons are saved in the database and can be reviewed or deleted at any time.
 - **Traffic-light classification**: Each comparison is classified as 🟢 **Improvement/Good**, 🟡 **Mixed**, or 🔴 **Deterioration/Poor**.
 
+### 📋 Period Summaries
+- **Summarize any time period**: Generate a comprehensive AI-powered summary for any arbitrary time range — from a few hours to several weeks or months.
+- **Quick presets**: One-click summaries for common periods: last 6h, 12h, 24h, 48h, 3 days, 7 days, 14 days, or 30 days.
+- **Custom periods**: Choose any start and end date/time, with an optional label (e.g., "Weekend trip", "Fasting experiment", "Holiday week").
+- **Glucose chart**: Interactive glucose trend chart for the selected period with event markers, target range visualization, and drag-to-zoom.
+- **Statistics dashboard**: Comprehensive stats — average glucose, min/max, standard deviation, time in range, time above/below range, reading count, event count.
+- **Event listing**: All events within the period are shown with their timestamp, glucose at event, spike, and AI classification.
+- **AI period analysis**: GPT generates a comprehensive analysis covering:
+  - Overall glucose control assessment
+  - Key metrics review against healthy targets
+  - Glucose pattern identification (overnight, post-meal, fasting, time-of-day trends)
+  - Per-event impact analysis — which meals/activities helped or hurt
+  - Night and morning glucose analysis with dawn phenomenon detection
+  - 3–5 specific, actionable recommendations
+- **Background processing**: Summaries are processed asynchronously. The UI updates in real time via SignalR when the analysis is complete.
+- **Persistent history**: All period summaries are saved in the database and can be reviewed or deleted at any time.
+- **Traffic-light classification**: Each period is classified as 🟢 **Good Control**, 🟡 **Moderate Control**, or 🔴 **Poor Control**.
+
 ### 📄 PDF Reports for Doctors
 - **Professional PDF reports** that can be generated for any date range (up to 90 days) and shared with healthcare providers.
 - **Glucose Trend Chart**: A full-period glucose line graph rendered with SkiaSharp, showing the glucose trend line, target range shading (70–180 mg/dL), high/low coloring, and event markers.
@@ -173,6 +191,7 @@ FreeStyle Libre Sensor
    │  │   DailySummaryService      │──── Aggregates days, calls GPT
    │  │   DataBackupService        │──── Periodic JSON/CSV export
    │  │   ComparisonService       │──── Period comparison analysis (AI)
+   │  │   PeriodSummaryService   │──── Arbitrary period summaries (AI)
    │  │   DatabaseBackupService   │──── Daily SQL Server .bak backup/restore
    │  └───────────────────────────┘  │
    │            │                    │

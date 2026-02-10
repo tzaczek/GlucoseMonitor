@@ -12,6 +12,7 @@ import {
   Legend,
 } from 'recharts';
 import { format, parseISO, subDays, subHours } from 'date-fns';
+import EventDetailModal from './EventDetailModal';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
@@ -72,6 +73,9 @@ export default function ComparePage() {
   const [periodBLabel, setPeriodBLabel] = useState('Period B');
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState(null);
+
+  // Event modal state
+  const [selectedEventId, setSelectedEventId] = useState(null);
 
   const fetchComparisons = useCallback(async () => {
     try {
@@ -367,32 +371,107 @@ export default function ComparePage() {
             <div className="loading"><div className="spinner" /><p>Loading comparison...</p></div>
           )}
           {selectedId && !detailLoading && detail && (
-            <ComparisonDetail detail={detail} />
+            <ComparisonDetail detail={detail} onEventClick={(id) => setSelectedEventId(id)} />
           )}
         </div>
       </div>
+
+      {/* Event detail modal */}
+      {selectedEventId && (
+        <EventDetailModal
+          eventId={selectedEventId}
+          onClose={() => setSelectedEventId(null)}
+        />
+      )}
     </div>
   );
 }
 
-function ComparisonDetail({ detail }) {
+function ComparisonDetail({ detail, onEventClick }) {
   const labelA = detail.periodALabel || 'Period A';
   const labelB = detail.periodBLabel || 'Period B';
 
+  // Zoom state: drag-to-select range on the chart
+  const [refAreaLeft, setRefAreaLeft] = useState(null);
+  const [refAreaRight, setRefAreaRight] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [zoomLeft, setZoomLeft] = useState(null);
+  const [zoomRight, setZoomRight] = useState(null);
+
+  // Reset zoom when switching comparisons
+  useEffect(() => {
+    setZoomLeft(null);
+    setZoomRight(null);
+  }, [detail.id]);
+
+  const handleMouseDown = useCallback((e) => {
+    if (e && e.activeLabel != null) {
+      setRefAreaLeft(e.activeLabel);
+      setRefAreaRight(e.activeLabel);
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleMouseMove = useCallback((e) => {
+    if (isDragging && e && e.activeLabel != null) {
+      setRefAreaRight(e.activeLabel);
+    }
+  }, [isDragging]);
+
+  const handleMouseUp = useCallback(() => {
+    if (!isDragging) return;
+    setIsDragging(false);
+
+    if (refAreaLeft == null || refAreaRight == null) {
+      setRefAreaLeft(null);
+      setRefAreaRight(null);
+      return;
+    }
+
+    const left = Math.min(refAreaLeft, refAreaRight);
+    const right = Math.max(refAreaLeft, refAreaRight);
+
+    // Need at least some range
+    if (right - left < 0.05) {
+      setRefAreaLeft(null);
+      setRefAreaRight(null);
+      return;
+    }
+
+    setZoomLeft(left);
+    setZoomRight(right);
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+  }, [isDragging, refAreaLeft, refAreaRight]);
+
+  const handleResetZoom = useCallback(() => {
+    setZoomLeft(null);
+    setZoomRight(null);
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+  }, []);
+
   // Merge both periods into one sorted array.
-  // Each entry has `offset` plus `valueA` and/or `valueB`.
-  // We set connectNulls={true} on the Lines so each series draws continuously
-  // even where the other series has data points and this one doesn't.
+  // Each entry has `offset` plus `valueA` and/or `valueB`, and
+  // the actual local timestamps for the tooltip.
   const chartData = useMemo(() => {
     if (!detail.periodAReadings?.length && !detail.periodBReadings?.length) return [];
 
     const points = [];
 
     for (const r of (detail.periodAReadings || [])) {
-      points.push({ offset: r.offsetHours, valueA: r.value });
+      points.push({
+        offset: r.offsetHours,
+        valueA: r.value,
+        timeA: format(new Date(r.timestamp), 'MMM d, HH:mm'),
+      });
     }
     for (const r of (detail.periodBReadings || [])) {
-      points.push({ offset: r.offsetHours, valueB: r.value });
+      points.push({
+        offset: r.offsetHours,
+        valueB: r.value,
+        timeB: format(new Date(r.timestamp), 'MMM d, HH:mm'),
+      });
     }
 
     // Sort by offset so the chart axis is monotonic
@@ -404,6 +483,14 @@ function ComparisonDetail({ detail }) {
     if (chartData.length === 0) return 24;
     return Math.ceil(chartData[chartData.length - 1].offset) || 24;
   }, [chartData]);
+
+  // Filter chart data to zoom range
+  const displayData = useMemo(() => {
+    if (zoomLeft == null || zoomRight == null) return chartData;
+    return chartData.filter(d => d.offset >= zoomLeft && d.offset <= zoomRight);
+  }, [chartData, zoomLeft, zoomRight]);
+
+  const isZoomed = zoomLeft != null && zoomRight != null;
 
   const eventMarkersA = useMemo(() =>
     (detail.periodAEvents || []).map(e => ({ offset: e.offsetHours, title: e.noteTitle, cls: e.aiClassification })),
@@ -422,14 +509,20 @@ function ComparisonDetail({ detail }) {
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
+    // Extract actual local timestamps from the data point
+    const dataPoint = payload[0]?.payload;
     return (
       <div className="compare-tooltip">
-        <div className="compare-tooltip-label">Offset: {formatOffset(label)}</div>
-        {payload.map((p, i) => (
-          <div key={i} style={{ color: p.color }}>
-            {p.name}: {Math.round(p.value)} mg/dL
-          </div>
-        ))}
+        <div className="compare-tooltip-label">+{formatOffset(label)} from start</div>
+        {payload.map((p, i) => {
+          const localTime = p.dataKey === 'valueA' ? dataPoint?.timeA : dataPoint?.timeB;
+          return (
+            <div key={i} style={{ color: p.color }}>
+              {p.name}: {Math.round(p.value)} mg/dL
+              {localTime && <span className="compare-tooltip-time"> ({localTime})</span>}
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -475,21 +568,43 @@ function ComparisonDetail({ detail }) {
       {/* Overlay chart */}
       {chartData.length > 0 && (
         <div className="compare-chart-section">
-          <h4>Glucose Overlay</h4>
+          <div className="compare-chart-title-row">
+            <h4>Glucose Overlay</h4>
+            {isZoomed && (
+              <button className="compare-zoom-reset" onClick={handleResetZoom}>
+                Reset Zoom
+              </button>
+            )}
+            {!isZoomed && <span className="compare-zoom-hint">Drag on chart to zoom</span>}
+          </div>
+          <div className="compare-chart-periods-header">
+            <span className="period-label-a">{labelA}</span>
+            <span className="period-header-dates">{format(new Date(detail.periodAStart), 'MMM d, HH:mm')} – {format(new Date(detail.periodAEnd), 'MMM d, HH:mm')}</span>
+            <span style={{ margin: '0 12px', color: 'rgba(255,255,255,0.3)' }}>|</span>
+            <span className="period-label-b">{labelB}</span>
+            <span className="period-header-dates">{format(new Date(detail.periodBStart), 'MMM d, HH:mm')} – {format(new Date(detail.periodBEnd), 'MMM d, HH:mm')}</span>
+          </div>
           <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+            <LineChart
+              data={displayData}
+              margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
               <XAxis
                 dataKey="offset"
                 type="number"
-                domain={[0, maxOffset]}
+                domain={isZoomed ? [zoomLeft, zoomRight] : [0, maxOffset]}
                 tickFormatter={formatOffset}
                 stroke="rgba(255,255,255,0.5)"
                 tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 11 }}
-                label={{ value: 'Time offset from period start', position: 'bottom', fill: 'rgba(255,255,255,0.5)', fontSize: 11, dy: 5 }}
+                allowDataOverflow={true}
               />
               <YAxis
-                domain={[40, 'auto']}
+                domain={['auto', 'auto']}
                 stroke="rgba(255,255,255,0.5)"
                 tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 11 }}
                 label={{ value: 'mg/dL', angle: -90, position: 'insideLeft', fill: 'rgba(255,255,255,0.5)', fontSize: 11 }}
@@ -499,13 +614,17 @@ function ComparisonDetail({ detail }) {
               <ReferenceLine y={70} stroke="rgba(255,100,100,0.3)" strokeDasharray="5 5" />
               <ReferenceLine y={180} stroke="rgba(255,100,100,0.3)" strokeDasharray="5 5" />
 
-              {/* Event markers for Period A */}
-              {eventMarkersA.map((m, i) => (
-                <ReferenceLine key={`ea-${i}`} x={m.offset} stroke="rgba(0,180,255,0.4)" strokeDasharray="4 4" label="" />
+              {/* Event markers for Period A (only if in view) */}
+              {eventMarkersA
+                .filter(m => !isZoomed || (m.offset >= zoomLeft && m.offset <= zoomRight))
+                .map((m, i) => (
+                  <ReferenceLine key={`ea-${i}`} x={m.offset} stroke="rgba(0,180,255,0.4)" strokeDasharray="4 4" label="" />
               ))}
-              {/* Event markers for Period B */}
-              {eventMarkersB.map((m, i) => (
-                <ReferenceLine key={`eb-${i}`} x={m.offset} stroke="rgba(255,160,0,0.4)" strokeDasharray="4 4" label="" />
+              {/* Event markers for Period B (only if in view) */}
+              {eventMarkersB
+                .filter(m => !isZoomed || (m.offset >= zoomLeft && m.offset <= zoomRight))
+                .map((m, i) => (
+                  <ReferenceLine key={`eb-${i}`} x={m.offset} stroke="rgba(255,160,0,0.4)" strokeDasharray="4 4" label="" />
               ))}
 
               <Line
@@ -528,6 +647,17 @@ function ComparisonDetail({ detail }) {
                 connectNulls={true}
                 isAnimationActive={false}
               />
+
+              {/* Drag selection highlight */}
+              {isDragging && refAreaLeft != null && refAreaRight != null && (
+                <ReferenceArea
+                  x1={Math.min(refAreaLeft, refAreaRight)}
+                  x2={Math.max(refAreaLeft, refAreaRight)}
+                  strokeOpacity={0.3}
+                  fill="rgba(0,180,255,0.2)"
+                />
+              )}
+
               <Legend />
             </LineChart>
           </ResponsiveContainer>
@@ -547,6 +677,12 @@ function ComparisonDetail({ detail }) {
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td>Period</td>
+              <td>{format(new Date(detail.periodAStart), 'MMM d, HH:mm')} – {format(new Date(detail.periodAEnd), 'MMM d, HH:mm')}</td>
+              <td>{format(new Date(detail.periodBStart), 'MMM d, HH:mm')} – {format(new Date(detail.periodBEnd), 'MMM d, HH:mm')}</td>
+              <td></td>
+            </tr>
             <tr>
               <td>Duration</td>
               <td>{formatDuration(detail.periodAStart, detail.periodAEnd)}</td>
@@ -620,13 +756,13 @@ function ComparisonDetail({ detail }) {
               <h5 className="period-label-a">{labelA}</h5>
               {(!detail.periodAEvents || detail.periodAEvents.length === 0) && <p className="compare-empty-small">No events</p>}
               {detail.periodAEvents?.map(e => (
-                <div key={e.id} className="compare-event-item">
+                <div key={e.id} className="compare-event-item compare-event-clickable" onClick={() => onEventClick && onEventClick(e.id)}>
                   <span className="compare-event-class" style={{ color: classColor(e.aiClassification) }}>
                     {classEmoji(e.aiClassification)}
                   </span>
                   <div>
                     <div className="compare-event-title">{e.noteTitle}</div>
-                    <div className="compare-event-time">+{formatOffset(e.offsetHours)} • {e.glucoseAtEvent != null ? `${Math.round(e.glucoseAtEvent)} mg/dL` : ''}</div>
+                    <div className="compare-event-time">{format(new Date(e.eventTimestamp), 'MMM d, HH:mm')} • {e.glucoseAtEvent != null ? `${Math.round(e.glucoseAtEvent)} mg/dL` : ''}</div>
                   </div>
                 </div>
               ))}
@@ -635,13 +771,13 @@ function ComparisonDetail({ detail }) {
               <h5 className="period-label-b">{labelB}</h5>
               {(!detail.periodBEvents || detail.periodBEvents.length === 0) && <p className="compare-empty-small">No events</p>}
               {detail.periodBEvents?.map(e => (
-                <div key={e.id} className="compare-event-item">
+                <div key={e.id} className="compare-event-item compare-event-clickable" onClick={() => onEventClick && onEventClick(e.id)}>
                   <span className="compare-event-class" style={{ color: classColor(e.aiClassification) }}>
                     {classEmoji(e.aiClassification)}
                   </span>
                   <div>
                     <div className="compare-event-title">{e.noteTitle}</div>
-                    <div className="compare-event-time">+{formatOffset(e.offsetHours)} • {e.glucoseAtEvent != null ? `${Math.round(e.glucoseAtEvent)} mg/dL` : ''}</div>
+                    <div className="compare-event-time">{format(new Date(e.eventTimestamp), 'MMM d, HH:mm')} • {e.glucoseAtEvent != null ? `${Math.round(e.glucoseAtEvent)} mg/dL` : ''}</div>
                   </div>
                 </div>
               ))}

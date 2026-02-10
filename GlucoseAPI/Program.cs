@@ -64,6 +64,8 @@ builder.Services.AddSingleton<ComparisonService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ComparisonService>());
 builder.Services.AddSingleton<DailySummaryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DailySummaryService>());
+builder.Services.AddSingleton<PeriodSummaryService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PeriodSummaryService>());
 
 // ── MediatR (CQRS) ──────────────────────────────────────
 builder.Services.AddMediatR(cfg =>
@@ -389,6 +391,47 @@ using (var scope = app.Services.CreateScope())
             catch (Exception tableEx)
             {
                 logger.LogWarning("Could not verify GlucoseComparisons table: {Message}", tableEx.Message);
+            }
+
+            // Create PeriodSummaries table if it doesn't exist
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'PeriodSummaries') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE PeriodSummaries (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Name NVARCHAR(500) NULL,
+                            PeriodStart DATETIME2 NOT NULL,
+                            PeriodEnd DATETIME2 NOT NULL,
+                            TimeZone NVARCHAR(100) NOT NULL DEFAULT '',
+                            ReadingCount INT NOT NULL DEFAULT 0,
+                            GlucoseMin FLOAT NULL,
+                            GlucoseMax FLOAT NULL,
+                            GlucoseAvg FLOAT NULL,
+                            GlucoseStdDev FLOAT NULL,
+                            TimeInRange FLOAT NULL,
+                            TimeAboveRange FLOAT NULL,
+                            TimeBelowRange FLOAT NULL,
+                            EventCount INT NOT NULL DEFAULT 0,
+                            EventIds NVARCHAR(MAX) NULL,
+                            EventTitles NVARCHAR(MAX) NULL,
+                            AiAnalysis NVARCHAR(MAX) NULL,
+                            AiClassification NVARCHAR(10) NULL,
+                            Status NVARCHAR(20) NOT NULL DEFAULT 'pending',
+                            ErrorMessage NVARCHAR(MAX) NULL,
+                            CreatedAt DATETIME2 NOT NULL,
+                            CompletedAt DATETIME2 NULL
+                        );
+                        CREATE INDEX IX_PeriodSummaries_Status ON PeriodSummaries (Status);
+                        CREATE INDEX IX_PeriodSummaries_CreatedAt ON PeriodSummaries (CreatedAt);
+                        PRINT 'Created PeriodSummaries table.';
+                    END");
+                logger.LogInformation("PeriodSummaries table check complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not verify PeriodSummaries table: {Message}", tableEx.Message);
             }
 
             // Create AiUsageLogs table if it doesn't exist

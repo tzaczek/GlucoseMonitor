@@ -4,13 +4,13 @@ import GlucoseChart from './components/GlucoseChart';
 import GlucoseTable from './components/GlucoseTable';
 import CurrentReading from './components/CurrentReading';
 import SettingsPage from './components/SettingsPage';
-import NotesPage from './components/NotesPage';
 import EventsPage from './components/EventsPage';
 import EventDetailModal from './components/EventDetailModal';
 import AiUsagePage from './components/AiUsagePage';
 import DailySummariesPage from './components/DailySummariesPage';
 import ReportsPage from './components/ReportsPage';
 import ComparePage from './components/ComparePage';
+import PeriodSummaryPage from './components/PeriodSummaryPage';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
@@ -168,6 +168,11 @@ function App() {
       window.dispatchEvent(new CustomEvent('comparisonsUpdated'));
     });
 
+    connection.on('PeriodSummariesUpdated', (count) => {
+      console.log(`[SignalR] ${count} period summary(s) updated — will refresh if viewing.`);
+      window.dispatchEvent(new CustomEvent('periodSummariesUpdated'));
+    });
+
     connection.onreconnecting(() => {
       console.log('[SignalR] Reconnecting...');
     });
@@ -313,10 +318,10 @@ function App() {
             Daily
           </button>
           <button
-            className={page === 'notes' ? 'active' : ''}
-            onClick={() => setPage('notes')}
+            className={page === 'periodsummary' ? 'active' : ''}
+            onClick={() => setPage('periodsummary')}
           >
-            Notes
+            Summaries
           </button>
           <button
             className={page === 'compare' ? 'active' : ''}
@@ -345,10 +350,10 @@ function App() {
         </nav>
       </header>
 
+      {page === 'periodsummary' && <PeriodSummaryPage />}
       {page === 'compare' && <ComparePage />}
       {page === 'events' && <EventsPage />}
       {page === 'dailysummaries' && <DailySummariesPage />}
-      {page === 'notes' && <NotesPage />}
       {page === 'aiusage' && <AiUsagePage key={aiUsageVersion} />}
       {page === 'reports' && <ReportsPage />}
       {page === 'settings' && <SettingsPage />}
