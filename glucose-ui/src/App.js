@@ -10,6 +10,7 @@ import EventDetailModal from './components/EventDetailModal';
 import AiUsagePage from './components/AiUsagePage';
 import DailySummariesPage from './components/DailySummariesPage';
 import ReportsPage from './components/ReportsPage';
+import ComparePage from './components/ComparePage';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
@@ -160,6 +161,11 @@ function App() {
     connection.on('AiUsageUpdated', (count) => {
       console.log(`[SignalR] AI usage updated — refreshing AI Usage page.`);
       setAiUsageVersion(v => v + 1);
+    });
+
+    connection.on('ComparisonsUpdated', (count) => {
+      console.log(`[SignalR] ${count} comparison(s) updated — will refresh if viewing.`);
+      window.dispatchEvent(new CustomEvent('comparisonsUpdated'));
     });
 
     connection.onreconnecting(() => {
@@ -313,6 +319,12 @@ function App() {
             Notes
           </button>
           <button
+            className={page === 'compare' ? 'active' : ''}
+            onClick={() => setPage('compare')}
+          >
+            Compare
+          </button>
+          <button
             className={page === 'aiusage' ? 'active' : ''}
             onClick={() => setPage('aiusage')}
           >
@@ -333,6 +345,7 @@ function App() {
         </nav>
       </header>
 
+      {page === 'compare' && <ComparePage />}
       {page === 'events' && <EventsPage />}
       {page === 'dailysummaries' && <DailySummariesPage />}
       {page === 'notes' && <NotesPage />}

@@ -81,6 +81,24 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **Period filtering**: View usage for any time period (7d, 2w, 1m, 3m, 6m, 1y, all time, or custom).
 - **Real-time updates**: Usage page automatically refreshes via SignalR when new API calls are made.
 
+### 📊 Period Comparison
+- **Compare any two time periods**: Select two glucose monitoring periods — hours, days, weeks, or custom date ranges — and see how your glucose control differed.
+- **Quick presets**: One-click comparisons for common scenarios: last 6h/12h/24h/48h/7d/14d/30d vs the previous equivalent period.
+- **Custom periods**: Choose any start and end date/time for each period, with optional labels (e.g., "Weekday" vs "Weekend").
+- **Overlay chart**: Both periods are displayed on the same graph with distinct colors (blue for Period A, orange for Period B), normalized by time offset from each period's start so they can be visually compared regardless of actual dates.
+- **Side-by-side statistics**: Average glucose, min/max, standard deviation, time in range, time above/below range, and event counts — shown in a comparison table with delta indicators (green for improvement, red for deterioration).
+- **Event comparison**: Events from both periods are listed side by side, showing what meals and activities occurred in each period and their glucose impact.
+- **AI differential analysis**: GPT analyzes the differences between the two periods and provides:
+  - Overview of which period was better controlled
+  - Key metrics comparison with highlights of the most significant differences
+  - Event analysis — what foods/activities differed and how they affected glucose
+  - Pattern differences — overnight, post-meal, morning fasting, etc.
+  - Root cause analysis — what likely caused the differences
+  - Actionable insights based on what worked well
+- **Background processing**: Comparisons are processed asynchronously. The UI updates in real time via SignalR when the analysis is complete.
+- **Persistent history**: All comparisons are saved in the database and can be reviewed or deleted at any time.
+- **Traffic-light classification**: Each comparison is classified as 🟢 **Improvement/Good**, 🟡 **Mixed**, or 🔴 **Deterioration/Poor**.
+
 ### 📄 PDF Reports for Doctors
 - **Professional PDF reports** that can be generated for any date range (up to 90 days) and shared with healthcare providers.
 - **Glucose Trend Chart**: A full-period glucose line graph rendered with SkiaSharp, showing the glucose trend line, target range shading (70–180 mg/dL), high/low coloring, and event markers.
@@ -154,6 +172,7 @@ FreeStyle Libre Sensor
    │  │   GlucoseEventAnalysis     │──── Correlates notes → events, calls GPT
    │  │   DailySummaryService      │──── Aggregates days, calls GPT
    │  │   DataBackupService        │──── Periodic JSON/CSV export
+   │  │   ComparisonService       │──── Period comparison analysis (AI)
    │  │   DatabaseBackupService   │──── Daily SQL Server .bak backup/restore
    │  └───────────────────────────┘  │
    │            │                    │

@@ -60,6 +60,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<GlucoseEventAnalys
 builder.Services.AddHostedService<DataBackupService>();
 builder.Services.AddSingleton<DatabaseBackupService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackupService>());
+builder.Services.AddSingleton<ComparisonService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ComparisonService>());
 builder.Services.AddSingleton<DailySummaryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DailySummaryService>());
 
@@ -333,6 +335,60 @@ using (var scope = app.Services.CreateScope())
             catch (Exception tableEx)
             {
                 logger.LogWarning("Could not verify AiClassification columns: {Message}", tableEx.Message);
+            }
+
+            // Create GlucoseComparisons table if it doesn't exist
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'GlucoseComparisons') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE GlucoseComparisons (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Name NVARCHAR(500) NULL,
+                            PeriodAStart DATETIME2 NOT NULL,
+                            PeriodAEnd DATETIME2 NOT NULL,
+                            PeriodALabel NVARCHAR(500) NULL,
+                            PeriodBStart DATETIME2 NOT NULL,
+                            PeriodBEnd DATETIME2 NOT NULL,
+                            PeriodBLabel NVARCHAR(500) NULL,
+                            TimeZone NVARCHAR(100) NOT NULL DEFAULT '',
+                            PeriodAReadingCount INT NOT NULL DEFAULT 0,
+                            PeriodAGlucoseMin FLOAT NULL,
+                            PeriodAGlucoseMax FLOAT NULL,
+                            PeriodAGlucoseAvg FLOAT NULL,
+                            PeriodAGlucoseStdDev FLOAT NULL,
+                            PeriodATimeInRange FLOAT NULL,
+                            PeriodATimeAboveRange FLOAT NULL,
+                            PeriodATimeBelowRange FLOAT NULL,
+                            PeriodAEventCount INT NOT NULL DEFAULT 0,
+                            PeriodAEventTitles NVARCHAR(MAX) NULL,
+                            PeriodBReadingCount INT NOT NULL DEFAULT 0,
+                            PeriodBGlucoseMin FLOAT NULL,
+                            PeriodBGlucoseMax FLOAT NULL,
+                            PeriodBGlucoseAvg FLOAT NULL,
+                            PeriodBGlucoseStdDev FLOAT NULL,
+                            PeriodBTimeInRange FLOAT NULL,
+                            PeriodBTimeAboveRange FLOAT NULL,
+                            PeriodBTimeBelowRange FLOAT NULL,
+                            PeriodBEventCount INT NOT NULL DEFAULT 0,
+                            PeriodBEventTitles NVARCHAR(MAX) NULL,
+                            AiAnalysis NVARCHAR(MAX) NULL,
+                            AiClassification NVARCHAR(10) NULL,
+                            Status NVARCHAR(20) NOT NULL DEFAULT 'pending',
+                            ErrorMessage NVARCHAR(MAX) NULL,
+                            CreatedAt DATETIME2 NOT NULL,
+                            CompletedAt DATETIME2 NULL
+                        );
+                        CREATE INDEX IX_GlucoseComparisons_Status ON GlucoseComparisons (Status);
+                        CREATE INDEX IX_GlucoseComparisons_CreatedAt ON GlucoseComparisons (CreatedAt);
+                        PRINT 'Created GlucoseComparisons table.';
+                    END");
+                logger.LogInformation("GlucoseComparisons table check complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not verify GlucoseComparisons table: {Message}", tableEx.Message);
             }
 
             // Create AiUsageLogs table if it doesn't exist

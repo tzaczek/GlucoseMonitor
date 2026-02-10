@@ -31,4 +31,7 @@ public class SignalRNotificationService : INotificationService
 
     public Task NotifyNotesUpdatedAsync(int count, CancellationToken ct = default)
         => _hubContext.Clients.All.SendAsync("NotesUpdated", count, ct);
+
+    public Task NotifyComparisonsUpdatedAsync(int count, CancellationToken ct = default)
+        => _hubContext.Clients.All.SendAsync("ComparisonsUpdated", count, ct);
 }

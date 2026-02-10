@@ -20,4 +20,7 @@ public interface INotificationService
 
     /// <summary>Notify clients that Samsung Notes have been updated.</summary>
     Task NotifyNotesUpdatedAsync(int count, CancellationToken ct = default);
+
+    /// <summary>Notify clients that a comparison has been updated (created, completed, or failed).</summary>
+    Task NotifyComparisonsUpdatedAsync(int count, CancellationToken ct = default);
 }

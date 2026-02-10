@@ -15,6 +15,7 @@ public class GlucoseDbContext : DbContext
     public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
     public DbSet<DailySummarySnapshot> DailySummarySnapshots => Set<DailySummarySnapshot>();
+    public DbSet<GlucoseComparison> GlucoseComparisons => Set<GlucoseComparison>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,6 +68,12 @@ public class GlucoseDbContext : DbContext
             entity.HasIndex(e => e.DailySummaryId);
             entity.HasIndex(e => e.Date);
             entity.HasIndex(e => e.GeneratedAt);
+        });
+
+        modelBuilder.Entity<GlucoseComparison>(entity =>
+        {
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.CreatedAt);
         });
     }
 }
