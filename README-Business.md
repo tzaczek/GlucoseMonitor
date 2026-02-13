@@ -149,6 +149,17 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **One-click restore**: Restore the database from any stored backup file directly from the Settings page, with a confirmation dialog warning that all current data will be replaced.
 - **Auto-cleanup**: Database backups older than 7 days are automatically removed.
 
+### 📜 Event Log
+- **Centralized application event log**: Every significant operation across all background services is recorded — glucose data fetches, Samsung Notes syncs, event creation, AI analyses, daily summaries, comparisons, period summaries, database backups, and system events.
+- **Three severity levels**: **Info** (normal operations), **Warning** (unexpected situations like data gaps), **Error** (failures).
+- **Categorized entries**: Events are grouped into categories: glucose, notes, events, analysis, daily, comparison, summary, backup, settings, system, sync.
+- **Data gap detection**: When glucose readings have a gap > 30 minutes (e.g., due to container downtime), a warning is automatically logged with details about the missing period.
+- **Rich context**: Each log entry includes the timestamp, source service, an optional numeric value (e.g., count of inserted readings), and optional detailed information (e.g., error stack trace, affected entity IDs).
+- **Real-time updates**: New event log entries are pushed to the browser via SignalR as they happen.
+- **Filtering & search**: Filter logs by time range (last hour, 6h, 24h, 7d, 30d, all, or custom range), severity level, category, and free-text search across messages.
+- **Pagination**: Browse through large volumes of events with paginated results.
+- **Expandable details**: Click any log entry with details to expand and see full technical context.
+
 ### ⚡ Real-Time Updates (SignalR)
 - **WebSocket connection**: All data updates — new glucose readings, new events, analysis completions, daily summaries, AI usage — are pushed to the browser in real time.
 - **Automatic reconnection**: If the WebSocket connection drops, it automatically reconnects with exponential backoff.

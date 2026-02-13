@@ -4,6 +4,7 @@ using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using GlucoseAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -19,14 +20,18 @@ public class DailySummaryService : BackgroundService
     private readonly ILogger<DailySummaryService> _logger;
     private readonly INotificationService _notifications;
 
+    private readonly IEventLogger _eventLogger;
+
     public DailySummaryService(
         IServiceProvider serviceProvider,
         ILogger<DailySummaryService> logger,
-        INotificationService notifications)
+        INotificationService notifications,
+        IEventLogger eventLogger)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _notifications = notifications;
+        _eventLogger = eventLogger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -168,6 +173,10 @@ public class DailySummaryService : BackgroundService
         }
 
         _logger.LogInformation("Found {Count} day(s) needing summaries. Processing...", daysToProcess.Count);
+
+        await _eventLogger.LogInfoAsync(Daily,
+            $"Generating daily summaries for {daysToProcess.Count} day(s).",
+            source: nameof(DailySummaryService), numericValue: daysToProcess.Count);
 
         var processedCount = 0;
         foreach (var date in daysToProcess)
@@ -318,12 +327,25 @@ public class DailySummaryService : BackgroundService
                 "Daily summary generated for {Date} (trigger={Trigger}). Events: {EventCount}, Readings: {ReadingCount}.",
                 localDate.ToString("yyyy-MM-dd"), trigger, events.Count, readings.Count);
 
+            var dailyCost = AiCostCalculator.ComputeCost(gptResult.Model ?? modelName, gptResult.InputTokens, gptResult.OutputTokens);
+            await _eventLogger.LogInfoAsync(Daily,
+                $"Daily summary for {localDate:yyyy-MM-dd} completed. Classification: {summary.AiClassification}. " +
+                $"{events.Count} events, {readings.Count} readings. Tokens: {gptResult.TotalTokens}, cost: ${dailyCost:F4}.",
+                source: nameof(DailySummaryService), relatedEntityId: summary.Id, relatedEntityType: "DailySummary",
+                durationMs: gptResult.DurationMs);
+
             // Notify UI
             await _notifications.NotifyDailySummariesUpdatedAsync(1, ct);
         }
         else
         {
             _logger.LogWarning("AI returned empty analysis for daily summary {Date}.", localDate.ToString("yyyy-MM-dd"));
+
+            var failCost = AiCostCalculator.ComputeCost(gptResult.Model ?? modelName, gptResult.InputTokens, gptResult.OutputTokens);
+            await _eventLogger.LogWarningAsync(Daily,
+                $"AI analysis failed for daily summary {localDate:yyyy-MM-dd}. Tokens: {gptResult.TotalTokens}, cost: ${failCost:F4}.",
+                source: nameof(DailySummaryService), relatedEntityId: summary.Id, relatedEntityType: "DailySummary",
+                durationMs: gptResult.DurationMs);
         }
     }
 

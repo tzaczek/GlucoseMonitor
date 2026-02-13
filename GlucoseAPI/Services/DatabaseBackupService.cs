@@ -1,7 +1,9 @@
 using System.Globalization;
+using GlucoseAPI.Application.Interfaces;
 using GlucoseAPI.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -27,14 +29,18 @@ public class DatabaseBackupService : BackgroundService
     private bool _isRunning;
     private string? _lastError;
 
+    private readonly IEventLogger _eventLogger;
+
     public DatabaseBackupService(
         IServiceProvider serviceProvider,
         ILogger<DatabaseBackupService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IEventLogger eventLogger)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _configuration = configuration;
+        _eventLogger = eventLogger;
     }
 
     /// <summary>Get the current backup status.</summary>
@@ -276,11 +282,18 @@ public class DatabaseBackupService : BackgroundService
             _lastBackupSizeBytes = fileInfo.Exists ? fileInfo.Length : null;
 
             _logger.LogInformation("Database backup completed successfully → {File}", fileName);
+
+            await _eventLogger.LogInfoAsync(Backup,
+                $"Database backup completed → {fileName} ({(fileInfo.Exists ? fileInfo.Length / 1024 : 0)} KB).",
+                source: nameof(DatabaseBackupService));
         }
         catch (Exception ex)
         {
             _lastError = ex.Message;
             _logger.LogError(ex, "Database backup failed.");
+            await _eventLogger.LogErrorAsync(Backup,
+                $"Database backup failed: {ex.Message}",
+                source: nameof(DatabaseBackupService), detail: ex.ToString());
         }
         finally
         {

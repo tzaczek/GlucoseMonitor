@@ -2,6 +2,7 @@ using GlucoseAPI.Application.Interfaces;
 using GlucoseAPI.Data;
 using GlucoseAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -14,17 +15,20 @@ public class SamsungNotesSyncService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<SamsungNotesSyncService> _logger;
     private readonly INotificationService _notifications;
+    private readonly IEventLogger _eventLogger;
     private readonly int _syncIntervalMinutes;
 
     public SamsungNotesSyncService(
         IServiceProvider serviceProvider,
         ILogger<SamsungNotesSyncService> logger,
         INotificationService notifications,
+        IEventLogger eventLogger,
         IConfiguration configuration)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _notifications = notifications;
+        _eventLogger = eventLogger;
         _syncIntervalMinutes = configuration.GetValue("SamsungNotes:SyncIntervalMinutes", 10);
     }
 
@@ -148,12 +152,12 @@ public class SamsungNotesSyncService : BackgroundService
             await db.SaveChangesAsync();
             _logger.LogInformation("Samsung Notes sync complete: {Inserted} inserted, {Updated} updated.", inserted, updated);
 
+            await _eventLogger.LogInfoAsync(Notes,
+                $"Samsung Notes synced: {inserted} new, {updated} updated.",
+                source: nameof(SamsungNotesSyncService), numericValue: inserted + updated);
+
             // Notify connected UI clients
             await _notifications.NotifyNotesUpdatedAsync(inserted + updated);
-        }
-        else
-        {
-            _logger.LogInformation("Samsung Notes sync complete: no changes detected.");
         }
     }
 }

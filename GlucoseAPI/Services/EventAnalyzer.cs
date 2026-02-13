@@ -4,6 +4,7 @@ using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using GlucoseAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -19,6 +20,7 @@ public class EventAnalyzer
     private readonly IGptClient _gptClient;
     private readonly INotificationService _notifications;
     private readonly TimeZoneConverter _timeZoneConverter;
+    private readonly IEventLogger _eventLogger;
     private readonly ILogger<EventAnalyzer> _logger;
 
     public EventAnalyzer(
@@ -27,6 +29,7 @@ public class EventAnalyzer
         IGptClient gptClient,
         INotificationService notifications,
         TimeZoneConverter timeZoneConverter,
+        IEventLogger eventLogger,
         ILogger<EventAnalyzer> logger)
     {
         _db = db;
@@ -34,6 +37,7 @@ public class EventAnalyzer
         _gptClient = gptClient;
         _notifications = notifications;
         _timeZoneConverter = timeZoneConverter;
+        _eventLogger = eventLogger;
         _logger = logger;
     }
 
@@ -82,6 +86,12 @@ public class EventAnalyzer
         if (!gptResult.Success || string.IsNullOrWhiteSpace(gptResult.Content))
         {
             _logger.LogWarning("GPT returned empty analysis for event '{Title}' (ID={Id}).", evt.NoteTitle, evt.Id);
+
+            var failCost = AiCostCalculator.ComputeCost(gptResult.Model ?? modelName, gptResult.InputTokens, gptResult.OutputTokens);
+            await _eventLogger.LogWarningAsync(Analysis,
+                $"AI analysis failed for event '{evt.NoteTitle}' (#{evt.Id}). Tokens: {gptResult.TotalTokens}, cost: ${failCost:F4}. Reason: {reason}",
+                source: nameof(EventAnalyzer), relatedEntityId: evt.Id, relatedEntityType: "GlucoseEvent",
+                durationMs: gptResult.DurationMs);
 
             // Save any pending AI usage log and notify UI
             await _db.SaveChangesAsync(ct);
@@ -134,6 +144,13 @@ public class EventAnalyzer
 
         _logger.LogInformation("AI analysis complete for event '{Title}' (ID={Id}). Reason: {Reason}",
             evt.NoteTitle, evt.Id, reason);
+
+        var cost = AiCostCalculator.ComputeCost(gptResult.Model ?? modelName, gptResult.InputTokens, gptResult.OutputTokens);
+        await _eventLogger.LogInfoAsync(Analysis,
+            $"AI analysis completed for event '{evt.NoteTitle}' (#{evt.Id}). Classification: {classification}. " +
+            $"Tokens: {gptResult.TotalTokens} ({gptResult.InputTokens} in / {gptResult.OutputTokens} out), cost: ${cost:F4}. Reason: {reason}",
+            source: nameof(EventAnalyzer), relatedEntityId: evt.Id, relatedEntityType: "GlucoseEvent",
+            durationMs: gptResult.DurationMs);
 
         // Notify UI
         await _notifications.NotifyEventsUpdatedAsync(1, ct);

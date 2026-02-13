@@ -54,12 +54,14 @@ GlucoseAPI/
 ├── Application/                  # ── Use cases, CQRS handlers, ports ──
 │   ├── Interfaces/
 │   │   ├── IGptClient.cs               # GPT API abstraction + GptAnalysisResult record
-│   │   └── INotificationService.cs     # Real-time notification abstraction
+│   │   ├── INotificationService.cs     # Real-time notification abstraction
+│   │   └── IEventLogger.cs             # Central event logging abstraction + EventCategory constants
 │   └── Features/                       # MediatR CQRS handlers (one file per use case)
 │       ├── Glucose/                    # GetLatestReading, GetHistory, GetStats, GetDates
 │       ├── Events/                     # GetEvents, GetEventDetail, GetStatus, Reprocess
 │       ├── Comparisons/               # CreateComparison, GetComparisons, GetDetail, Delete
 │       ├── PeriodSummaries/           # CreatePeriodSummary, GetPeriodSummaries, GetDetail, Delete
+│       ├── EventLogs/                 # GetEventLogs (filtered + paginated)
 │       ├── DailySummaries/             # GetSummaries, GetDetail, GetStatus, GetSnapshot, Trigger
 │       ├── Notes/                      # GetNotes, GetNote, GetFolders, GetStatus, Media
 │       ├── AiUsage/                    # GetLogs, GetSummary, GetPricing
@@ -71,8 +73,10 @@ GlucoseAPI/
 │   ├── ExternalApis/
 │   │   ├── OpenAiGptClient.cs          # IGptClient implementation via IHttpClientFactory
 │   │   └── GptModels.cs                # Shared GPT request/response DTOs
-│   └── Notifications/
-│       └── SignalRNotificationService.cs # INotificationService via SignalR hub
+│   ├── Notifications/
+│   │   └── SignalRNotificationService.cs # INotificationService via SignalR hub
+│   └── Logging/
+│       └── EventLogger.cs             # IEventLogger implementation (DB + SignalR push)
 │
 ├── Controllers/                  # REST API endpoints (thin MediatR dispatchers)
 │   ├── GlucoseController.cs      # /api/glucose/* — readings, stats, history
@@ -80,6 +84,7 @@ GlucoseAPI/
 │   ├── ComparisonController.cs  # /api/comparison/* — period comparisons
 │   ├── PeriodSummaryController.cs # /api/periodsummary/* — arbitrary period summaries
 │   ├── DailySummariesController.cs # /api/dailysummaries/* — daily summaries
+│   ├── EventLogController.cs     # /api/eventlog — application event log (filtered + paginated)
 │   ├── NotesController.cs        # /api/notes/* — Samsung Notes
 │   ├── SettingsController.cs     # /api/settings/* — LibreLink + analysis config
 │   ├── AiUsageController.cs      # /api/aiusage/* — GPT usage tracking
@@ -97,6 +102,7 @@ GlucoseAPI/
 │   ├── GlucoseEvent.cs           # Meal/activity event + AI analysis + history
 │   ├── GlucoseComparison.cs     # Period comparison entity + DTOs
 │   ├── PeriodSummary.cs         # Arbitrary period summary entity + DTOs
+│   ├── EventLog.cs              # Application event log entity + DTOs
 │   ├── DailySummary.cs           # Daily aggregation entity
 │   ├── DailySummarySnapshot.cs   # Immutable snapshot per generation run
 │   ├── SamsungNote.cs            # Synced Samsung Notes metadata
@@ -152,6 +158,7 @@ Program.cs registers:
   Application Interfaces → Infrastructure Implementations:
     - IGptClient → OpenAiGptClient           (Scoped)
     - INotificationService → SignalRNotificationService (Singleton)
+    - IEventLogger → EventLogger             (Singleton — writes to DB + SignalR push)
 
   Named HttpClients (IHttpClientFactory):
     - "OpenAI"    — BaseAddress: https://api.openai.com/, Accept: application/json
@@ -313,6 +320,22 @@ The database is created via `EnsureCreated()` at startup, with additional `ALTER
 └──────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────┐
+│            EventLogs                          │
+│──────────────────────────────────────────────│
+│ Id (PK)                                      │
+│ Timestamp (UTC)                              │
+│ Level (info/warning/error)                   │
+│ Category (glucose/notes/events/analysis/     │
+│           daily/comparison/summary/backup/   │
+│           settings/system/sync)              │
+│ Message (≤500 chars)                         │
+│ Detail (optional extended description)       │
+│ Source (service name)                        │
+│ RelatedEntityId, RelatedEntityType           │
+│ NumericValue, DurationMs                     │
+└──────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────┐
 │            AppSettings                        │
 │──────────────────────────────────────────────│
 │ Id (PK)                                      │
@@ -328,6 +351,7 @@ The database is created via `EnsureCreated()` at startup, with additional `ALTER
 - `AiUsageLogs`: CalledAt, GlucoseEventId, Model
 - `GlucoseComparisons`: Status, CreatedAt
 - `PeriodSummaries`: Status, CreatedAt
+- `EventLogs`: Timestamp, Level, Category
 - `DailySummaries`: Date (unique), IsProcessed
 - `DailySummarySnapshots`: DailySummaryId, Date, GeneratedAt
 
@@ -523,6 +547,7 @@ Manual restore (POST /api/settings/backup/restore):
 | GET | `/api/periodsummary/{id}` | Period summary detail + readings + events + AI |
 | POST | `/api/periodsummary` | Create new period summary (queued for background processing) |
 | DELETE | `/api/periodsummary/{id}` | Delete a period summary |
+| GET | `/api/eventlog` | List event logs (filtered + paginated) |
 | GET | `/api/dailysummaries` | List all daily summaries |
 | GET | `/api/dailysummaries/{id}` | Daily summary detail + events + readings + snapshots |
 | GET | `/api/dailysummaries/status` | Processing status |
@@ -561,6 +586,7 @@ Manual restore (POST /api/settings/backup/restore):
 | `DailySummariesUpdated` | count (int) | DailySummaryService after generating a summary |
 | `ComparisonsUpdated` | count (int) | ComparisonService after processing a comparison |
 | `PeriodSummariesUpdated` | count (int) | PeriodSummaryService after processing a period summary |
+| `EventLogsUpdated` | count (int) | EventLogger after writing any application event log entry |
 | `AiUsageUpdated` | count (int) | EventAnalyzer, DailySummaryService, ComparisonService, PeriodSummaryService after API calls |
 
 ### AI Integration (OpenAI GPT)
@@ -632,6 +658,7 @@ glucose-ui/
         ├── DailySummariesPage.js  # Daily summaries list + detail modal
         ├── ComparePage.js         # Period comparison (form, chart overlay, AI analysis)
         ├── PeriodSummaryPage.js   # Arbitrary period summaries (presets, custom, chart, AI analysis)
+        ├── EventLogPage.js        # Application event log with filtering, pagination, real-time updates
         ├── NotesPage.js           # Samsung Notes browser
         ├── AiUsagePage.js         # AI usage dashboard (charts, logs, costs)
         ├── ReportsPage.js         # PDF report generation with date range selector
@@ -640,7 +667,7 @@ glucose-ui/
 
 ### Key Design Decisions
 
-1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Summaries, Compare, Notes, AI Usage, Reports, Settings.
+1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Summaries, Compare, Event Log, AI Usage, Reports, Settings.
 2. **SignalR → Custom Events**: The SignalR connection lives in `App.js`. Events like `NotesUpdated` and `EventsUpdated` are re-dispatched as `window.dispatchEvent(new CustomEvent(...))` so child components can listen independently without prop drilling.
 3. **AI Usage versioning**: The `AiUsageUpdated` SignalR event increments an `aiUsageVersion` counter in App.js. The `AiUsagePage` component receives this as a React `key` prop, forcing a complete remount and fresh data fetch — solving the problem of browser-cached API responses.
 4. **Cache busting**: AI usage API calls use `{ cache: 'no-store' }` to prevent browser HTTP caching.
@@ -676,6 +703,8 @@ App.js SignalR listener
     │       └──▶ ComparePage listens → reloads list + refreshes detail
     ├──▶ PeriodSummariesUpdated → window.dispatchEvent('periodSummariesUpdated')
     │       └──▶ PeriodSummaryPage listens → reloads list + refreshes detail
+    ├──▶ EventLogsUpdated → window.dispatchEvent('eventLogsUpdated')
+    │       └──▶ EventLogPage listens → reloads log entries in real time
     └──▶ AiUsageUpdated → setAiUsageVersion(v => v + 1)
             └──▶ AiUsagePage key={version} → remount → fresh fetch
 ```

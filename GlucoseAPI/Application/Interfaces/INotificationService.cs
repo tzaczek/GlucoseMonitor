@@ -26,4 +26,7 @@ public interface INotificationService
 
     /// <summary>Notify clients that a period summary has been updated (created, completed, or failed).</summary>
     Task NotifyPeriodSummariesUpdatedAsync(int count, CancellationToken ct = default);
+
+    /// <summary>Notify clients that new event log entries have been written.</summary>
+    Task NotifyEventLogsUpdatedAsync(int count, CancellationToken ct = default);
 }

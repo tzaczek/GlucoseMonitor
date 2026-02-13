@@ -3,6 +3,7 @@ using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using GlucoseAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -29,14 +30,18 @@ public class GlucoseEventAnalysisService : BackgroundService
     // even if the next event occurs sooner. This ensures the full post-meal response is visible.
     private static readonly TimeSpan MinimumLookahead = TimeSpan.FromHours(3);
 
+    private readonly IEventLogger _eventLogger;
+
     public GlucoseEventAnalysisService(
         IServiceProvider serviceProvider,
         ILogger<GlucoseEventAnalysisService> logger,
-        INotificationService notifications)
+        INotificationService notifications,
+        IEventLogger eventLogger)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _notifications = notifications;
+        _eventLogger = eventLogger;
     }
 
     /// <summary>
@@ -293,6 +298,15 @@ public class GlucoseEventAnalysisService : BackgroundService
             _logger.LogInformation("Created {Created} glucose events. {Reanalysis} previous events queued for re-analysis.",
                 created, eventsNeedingReanalysis.Count);
 
+            if (created > 0)
+                await _eventLogger.LogInfoAsync(Events,
+                    $"Created {created} new glucose event(s) from Samsung Notes.",
+                    source: nameof(GlucoseEventAnalysisService), numericValue: created);
+            if (eventsNeedingReanalysis.Count > 0)
+                await _eventLogger.LogInfoAsync(Analysis,
+                    $"Queued {eventsNeedingReanalysis.Count} event(s) for AI re-analysis (period boundaries changed).",
+                    source: nameof(GlucoseEventAnalysisService), numericValue: eventsNeedingReanalysis.Count);
+
             // Run AI analysis for all unanalyzed events (new + re-analysis)
             var unanalyzed = await db.GlucoseEvents
                 .Where(e => !e.IsProcessed)
@@ -366,6 +380,10 @@ public class GlucoseEventAnalysisService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed AI analysis for event '{Title}' (ID={Id}).", evt.NoteTitle, evt.Id);
+                await _eventLogger.LogErrorAsync(Analysis,
+                    $"AI analysis failed for event '{evt.NoteTitle}' (#{evt.Id}): {ex.Message}",
+                    source: nameof(GlucoseEventAnalysisService), relatedEntityId: evt.Id,
+                    relatedEntityType: "GlucoseEvent", detail: ex.ToString());
             }
 
             // Rate limiting between API calls

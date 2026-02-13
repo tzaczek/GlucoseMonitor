@@ -11,6 +11,7 @@ import DailySummariesPage from './components/DailySummariesPage';
 import ReportsPage from './components/ReportsPage';
 import ComparePage from './components/ComparePage';
 import PeriodSummaryPage from './components/PeriodSummaryPage';
+import EventLogPage from './components/EventLogPage';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
@@ -171,6 +172,11 @@ function App() {
     connection.on('PeriodSummariesUpdated', (count) => {
       console.log(`[SignalR] ${count} period summary(s) updated — will refresh if viewing.`);
       window.dispatchEvent(new CustomEvent('periodSummariesUpdated'));
+    });
+
+    connection.on('EventLogsUpdated', (count) => {
+      console.log(`[SignalR] ${count} event log(s) — will refresh if viewing.`);
+      window.dispatchEvent(new CustomEvent('eventLogsUpdated'));
     });
 
     connection.onreconnecting(() => {
@@ -342,6 +348,12 @@ function App() {
             Reports
           </button>
           <button
+            className={page === 'eventlog' ? 'active' : ''}
+            onClick={() => setPage('eventlog')}
+          >
+            Event Log
+          </button>
+          <button
             className={page === 'settings' ? 'active' : ''}
             onClick={() => setPage('settings')}
           >
@@ -354,6 +366,7 @@ function App() {
       {page === 'compare' && <ComparePage />}
       {page === 'events' && <EventsPage />}
       {page === 'dailysummaries' && <DailySummariesPage />}
+      {page === 'eventlog' && <EventLogPage onNavigate={setPage} />}
       {page === 'aiusage' && <AiUsagePage key={aiUsageVersion} />}
       {page === 'reports' && <ReportsPage />}
       {page === 'settings' && <SettingsPage />}

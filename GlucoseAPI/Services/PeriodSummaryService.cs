@@ -5,6 +5,7 @@ using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using GlucoseAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -22,14 +23,18 @@ public class PeriodSummaryService : BackgroundService
     private readonly ConcurrentQueue<int> _queue = new();
     private readonly SemaphoreSlim _signal = new(0);
 
+    private readonly IEventLogger _eventLogger;
+
     public PeriodSummaryService(
         IServiceProvider serviceProvider,
         ILogger<PeriodSummaryService> logger,
-        INotificationService notifications)
+        INotificationService notifications,
+        IEventLogger eventLogger)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _notifications = notifications;
+        _eventLogger = eventLogger;
     }
 
     /// <summary>
@@ -61,6 +66,10 @@ public class PeriodSummaryService : BackgroundService
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Failed to process period summary {Id}.", summaryId);
+                    await _eventLogger.LogErrorAsync(Summary,
+                        $"Period summary #{summaryId} failed: {ex.Message}",
+                        source: nameof(PeriodSummaryService), relatedEntityId: summaryId,
+                        relatedEntityType: "PeriodSummary", detail: ex.ToString());
                     await SetFailedAsync(summaryId, ex.Message, stoppingToken);
                 }
             }
@@ -201,6 +210,13 @@ public class PeriodSummaryService : BackgroundService
             "Period summary {Id} completed. {Readings} readings, {Events} events over {Duration}.",
             summary.Id, readings.Count, events.Count,
             FormatDuration(summary.PeriodEnd - summary.PeriodStart));
+
+        var sumCost = AiCostCalculator.ComputeCost(gptResult.Model ?? modelName, gptResult.InputTokens, gptResult.OutputTokens);
+        await _eventLogger.LogInfoAsync(Summary,
+            $"Period summary #{summary.Id} completed{(!string.IsNullOrWhiteSpace(summary.Name) ? $": {summary.Name}" : "")}. " +
+            $"{readings.Count} readings, {events.Count} events. Tokens: {gptResult.TotalTokens}, cost: ${sumCost:F4}.",
+            source: nameof(PeriodSummaryService), relatedEntityId: summary.Id, relatedEntityType: "PeriodSummary",
+            durationMs: gptResult.DurationMs);
 
         await _notifications.NotifyPeriodSummariesUpdatedAsync(1, ct);
         await _notifications.NotifyAiUsageUpdatedAsync(1, ct);

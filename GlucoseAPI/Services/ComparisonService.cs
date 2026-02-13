@@ -5,6 +5,7 @@ using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using GlucoseAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -21,14 +22,18 @@ public class ComparisonService : BackgroundService
     private readonly ConcurrentQueue<int> _queue = new();
     private readonly SemaphoreSlim _signal = new(0);
 
+    private readonly IEventLogger _eventLogger;
+
     public ComparisonService(
         IServiceProvider serviceProvider,
         ILogger<ComparisonService> logger,
-        INotificationService notifications)
+        INotificationService notifications,
+        IEventLogger eventLogger)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _notifications = notifications;
+        _eventLogger = eventLogger;
     }
 
     /// <summary>
@@ -60,6 +65,10 @@ public class ComparisonService : BackgroundService
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Failed to process comparison {Id}.", comparisonId);
+                    await _eventLogger.LogErrorAsync(Comparison,
+                        $"Comparison #{comparisonId} failed: {ex.Message}",
+                        source: nameof(ComparisonService), relatedEntityId: comparisonId,
+                        relatedEntityType: "GlucoseComparison", detail: ex.ToString());
                     await SetFailedAsync(comparisonId, ex.Message, stoppingToken);
                 }
             }
@@ -200,6 +209,14 @@ public class ComparisonService : BackgroundService
         _logger.LogInformation(
             "Comparison {Id} completed. Period A: {AReadings} readings/{AEvents} events, Period B: {BReadings} readings/{BEvents} events.",
             comp.Id, readingsA.Count, eventsA.Count, readingsB.Count, eventsB.Count);
+
+        var compCost = AiCostCalculator.ComputeCost(gptResult.Model ?? modelName, gptResult.InputTokens, gptResult.OutputTokens);
+        await _eventLogger.LogInfoAsync(Comparison,
+            $"Comparison #{comp.Id} completed{(comp.Name != null ? $": {comp.Name}" : "")}. " +
+            $"A: {readingsA.Count} readings, B: {readingsB.Count} readings. " +
+            $"Tokens: {gptResult.TotalTokens}, cost: ${compCost:F4}.",
+            source: nameof(ComparisonService), relatedEntityId: comp.Id, relatedEntityType: "GlucoseComparison",
+            durationMs: gptResult.DurationMs);
 
         await _notifications.NotifyComparisonsUpdatedAsync(1, ct);
         await _notifications.NotifyAiUsageUpdatedAsync(1, ct);

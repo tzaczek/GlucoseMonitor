@@ -3,6 +3,7 @@ using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using GlucoseAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static GlucoseAPI.Application.Interfaces.EventCategory;
 
 namespace GlucoseAPI.Services;
 
@@ -15,20 +16,24 @@ public class GlucoseFetchService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<GlucoseFetchService> _logger;
     private readonly INotificationService _notifications;
+    private readonly IEventLogger _eventLogger;
 
     public GlucoseFetchService(
         IServiceProvider serviceProvider,
         ILogger<GlucoseFetchService> logger,
-        INotificationService notifications)
+        INotificationService notifications,
+        IEventLogger eventLogger)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _notifications = notifications;
+        _eventLogger = eventLogger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("GlucoseFetchService started.");
+        await _eventLogger.LogInfoAsync(EventCategory.System, "GlucoseFetchService started.", source: nameof(GlucoseFetchService));
 
         // Wait for DB to be ready on first start
         await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
@@ -49,6 +54,8 @@ public class GlucoseFetchService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching glucose data.");
+                await _eventLogger.LogErrorAsync(EventCategory.Glucose, $"Error fetching glucose data: {ex.Message}",
+                    source: nameof(GlucoseFetchService), detail: ex.ToString());
             }
 
             await Task.Delay(interval, stoppingToken);
@@ -136,6 +143,25 @@ public class GlucoseFetchService : BackgroundService
             return TimeSpan.FromMinutes(settings.FetchIntervalMinutes);
         }
 
+        // ── Gap detection ────────────────────────────────────
+        // If there's a gap of > 30 minutes between the oldest new reading and the latest DB reading,
+        // it means data was missed (e.g., containers were down and the API window moved past it).
+        if (latestTimestamp.HasValue && newReadings.Count > 0)
+        {
+            var oldestNewReading = newReadings.Min(r => r.Timestamp);
+            var gap = oldestNewReading - latestTimestamp.Value;
+            if (gap.TotalMinutes > 30)
+            {
+                var gapMsg = $"Data gap detected: {gap.TotalHours:F1} hours ({latestTimestamp.Value:u} → {oldestNewReading:u}). " +
+                             $"Readings during this period are permanently lost because the LibreLink API window has moved past them.";
+                _logger.LogWarning(gapMsg);
+                await _eventLogger.LogWarningAsync(EventCategory.Glucose, gapMsg,
+                    source: nameof(GlucoseFetchService),
+                    detail: $"Last DB reading: {latestTimestamp.Value:u}\nOldest API reading: {oldestNewReading:u}\nGap: {gap.TotalMinutes:F0} minutes\n" +
+                            $"API returned {readings.Count} readings spanning {readings.Min(r => r.Timestamp):u} → {readings.Max(r => r.Timestamp):u}");
+            }
+        }
+
         _logger.LogInformation("{Count} readings are newer than latest DB entry.", newReadings.Count);
 
         // Batch-check for any remaining duplicates (edge case: same timestamp, different patient)
@@ -158,16 +184,15 @@ public class GlucoseFetchService : BackgroundService
             await db.SaveChangesAsync();
             _logger.LogInformation("Inserted {Count} new readings into database.", inserted);
 
+            await _eventLogger.LogInfoAsync(EventCategory.Glucose,
+                $"Fetched {inserted} new glucose readings from LibreLink.",
+                source: nameof(GlucoseFetchService), numericValue: inserted);
+
             // Notify all connected UI clients to refresh their data
             await _notifications.NotifyNewGlucoseDataAsync(inserted);
-            _logger.LogInformation("Notified connected clients of {Count} new readings.", inserted);
 
             // Recalculate any events whose time period overlaps with the new data
             await RecalculateImpactedEventsAsync(db, newReadings);
-        }
-        else
-        {
-            _logger.LogInformation("All {Count} readings were duplicates — nothing to insert.", newReadings.Count);
         }
 
         return TimeSpan.FromMinutes(settings.FetchIntervalMinutes);
@@ -242,6 +267,11 @@ public class GlucoseFetchService : BackgroundService
         {
             await db.SaveChangesAsync();
             _logger.LogInformation("{Count} event(s) recalculated and queued for AI re-analysis.", recalculated);
+
+            await _eventLogger.LogInfoAsync(EventCategory.Events,
+                $"Recalculated glucose stats for {recalculated} event(s) due to new glucose data ({newMin:u} – {newMax:u}). Queued for AI re-analysis.",
+                source: nameof(GlucoseFetchService), numericValue: recalculated);
+
             await _notifications.NotifyEventsUpdatedAsync(recalculated);
         }
     }

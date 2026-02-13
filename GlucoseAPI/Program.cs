@@ -3,6 +3,7 @@ using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using GlucoseAPI.Hubs;
 using GlucoseAPI.Infrastructure.ExternalApis;
+using GlucoseAPI.Infrastructure.Logging;
 using GlucoseAPI.Infrastructure.Notifications;
 using GlucoseAPI.Services;
 using Microsoft.EntityFrameworkCore;
@@ -42,6 +43,7 @@ builder.Services.AddScoped<TimeZoneConverter>();
 // ── Application / Infrastructure Interfaces ────────────
 builder.Services.AddScoped<IGptClient, OpenAiGptClient>();
 builder.Services.AddSingleton<INotificationService, SignalRNotificationService>();
+builder.Services.AddSingleton<IEventLogger, GlucoseAPI.Infrastructure.Logging.EventLogger>();
 
 // ── Application Services ───────────────────────────────
 builder.Services.AddScoped<LibreLinkClient>();
@@ -434,6 +436,37 @@ using (var scope = app.Services.CreateScope())
                 logger.LogWarning("Could not verify PeriodSummaries table: {Message}", tableEx.Message);
             }
 
+            // Create EventLogs table if it doesn't exist
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'EventLogs') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE EventLogs (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Timestamp DATETIME2 NOT NULL,
+                            Level NVARCHAR(10) NOT NULL DEFAULT 'info',
+                            Category NVARCHAR(30) NOT NULL DEFAULT 'system',
+                            Message NVARCHAR(500) NOT NULL DEFAULT '',
+                            Detail NVARCHAR(MAX) NULL,
+                            Source NVARCHAR(100) NULL,
+                            RelatedEntityId INT NULL,
+                            RelatedEntityType NVARCHAR(50) NULL,
+                            NumericValue INT NULL,
+                            DurationMs INT NULL
+                        );
+                        CREATE INDEX IX_EventLogs_Timestamp ON EventLogs (Timestamp);
+                        CREATE INDEX IX_EventLogs_Level ON EventLogs (Level);
+                        CREATE INDEX IX_EventLogs_Category ON EventLogs (Category);
+                        PRINT 'Created EventLogs table.';
+                    END");
+                logger.LogInformation("EventLogs table check complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not verify EventLogs table: {Message}", tableEx.Message);
+            }
+
             // Create AiUsageLogs table if it doesn't exist
             try
             {
@@ -487,6 +520,17 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 app.MapHub<GlucoseHub>("/glucosehub");
+
+// Log application startup
+try
+{
+    var eventLogger = app.Services.GetRequiredService<IEventLogger>();
+    _ = eventLogger.LogInfoAsync(
+        GlucoseAPI.Application.Interfaces.EventCategory.System,
+        "Application started.",
+        source: "Program");
+}
+catch { /* best effort */ }
 
 app.Run();
 

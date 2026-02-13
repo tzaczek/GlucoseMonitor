@@ -17,6 +17,7 @@ public class GlucoseDbContext : DbContext
     public DbSet<DailySummarySnapshot> DailySummarySnapshots => Set<DailySummarySnapshot>();
     public DbSet<GlucoseComparison> GlucoseComparisons => Set<GlucoseComparison>();
     public DbSet<PeriodSummary> PeriodSummaries => Set<PeriodSummary>();
+    public DbSet<EventLog> EventLogs => Set<EventLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,6 +82,13 @@ public class GlucoseDbContext : DbContext
         {
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.CreatedAt);
+        });
+
+        modelBuilder.Entity<EventLog>(entity =>
+        {
+            entity.HasIndex(e => e.Timestamp);
+            entity.HasIndex(e => e.Level);
+            entity.HasIndex(e => e.Category);
         });
     }
 }
