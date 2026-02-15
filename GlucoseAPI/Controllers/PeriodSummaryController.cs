@@ -32,7 +32,8 @@ public class PeriodSummaryController : ControllerBase
         var command = new CreatePeriodSummaryCommand(
             request.Name,
             request.PeriodStart,
-            request.PeriodEnd
+            request.PeriodEnd,
+            request.ModelOverride
         );
         var result = await _mediator.Send(command, ct);
         if (!result.Success) return BadRequest(new { result.Message });
@@ -51,5 +52,6 @@ public class PeriodSummaryController : ControllerBase
 public record CreatePeriodSummaryRequest(
     string? Name,
     DateTime PeriodStart,
-    DateTime PeriodEnd
+    DateTime PeriodEnd,
+    string? ModelOverride = null
 );

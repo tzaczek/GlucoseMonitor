@@ -45,7 +45,11 @@ public class EventAnalyzer
     /// Run AI analysis on a single event. Returns the analysis text, or null on failure.
     /// Saves history entry and updates event in the database.
     /// </summary>
-    public async Task<string?> AnalyzeEventAsync(GlucoseEvent evt, string reason, CancellationToken ct = default)
+    /// <param name="evt">The event to analyze.</param>
+    /// <param name="reason">Human-readable reason for the analysis run.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="modelOverride">If set, uses this model instead of the one from settings (one-off override).</param>
+    public async Task<string?> AnalyzeEventAsync(GlucoseEvent evt, string reason, CancellationToken ct = default, string? modelOverride = null)
     {
         var analysisSettings = await _settingsService.GetAnalysisSettingsAsync();
 
@@ -74,7 +78,7 @@ public class EventAnalyzer
 
         // Build prompts
         var (systemPrompt, userPrompt) = BuildEventPrompts(evt, readings, overlappingEvents, tz);
-        const string modelName = "gpt-5-mini";
+        var modelName = !string.IsNullOrWhiteSpace(modelOverride) ? modelOverride : analysisSettings.GptModelName;
 
         // Call GPT via the abstracted client
         var gptResult = await _gptClient.AnalyzeAsync(
@@ -112,6 +116,7 @@ public class EventAnalyzer
             GlucoseEventId = evt.Id,
             AiAnalysis = analysis,
             AiClassification = classification,
+            AiModel = gptResult.Model ?? modelName,
             AnalyzedAt = DateTime.UtcNow,
             PeriodStart = evt.PeriodStart,
             PeriodEnd = evt.PeriodEnd,
@@ -136,6 +141,7 @@ public class EventAnalyzer
         evt.PeakTime = stats.PeakTime;
         evt.AiAnalysis = analysis;
         evt.AiClassification = classification;
+        evt.AiModel = gptResult.Model ?? modelName;
         evt.IsProcessed = true;
         evt.ProcessedAt = DateTime.UtcNow;
         evt.UpdatedAt = DateTime.UtcNow;

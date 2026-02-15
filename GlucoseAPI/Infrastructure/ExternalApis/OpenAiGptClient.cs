@@ -23,7 +23,7 @@ public class OpenAiGptClient : IGptClient
         string apiKey,
         string systemPrompt,
         string userPrompt,
-        string modelName = "gpt-5-mini",
+        string modelName = "gpt-4o-mini",
         int maxTokens = 4096,
         CancellationToken ct = default)
     {

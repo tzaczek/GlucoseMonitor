@@ -39,9 +39,9 @@ public class EventsController : ControllerBase
     }
 
     [HttpPost("{id}/reprocess")]
-    public async Task<ActionResult> Reprocess(int id, CancellationToken ct)
+    public async Task<ActionResult> Reprocess(int id, [FromBody] ReprocessRequest? request = null, CancellationToken ct = default)
     {
-        var result = await _mediator.Send(new ReprocessEventCommand(id), ct);
+        var result = await _mediator.Send(new ReprocessEventCommand(id, request?.ModelOverride), ct);
 
         if (!result.Found)
             return NotFound();
@@ -51,3 +51,5 @@ public class EventsController : ControllerBase
             : StatusCode(500, new { message = result.Message });
     }
 }
+
+public record ReprocessRequest(string? ModelOverride = null);

@@ -13,6 +13,8 @@ import {
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
 
+import MODEL_OPTIONS from './modelOptions';
+
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 function EventDetailModal({ eventId, onClose, onReprocess }) {
@@ -20,6 +22,7 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reprocessing, setReprocessing] = useState(false);
+  const [reanalyzeModel, setReanalyzeModel] = useState('');
 
   // Sync internal ID when parent prop changes
   useEffect(() => {
@@ -78,7 +81,12 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
   const handleReprocess = async () => {
     setReprocessing(true);
     try {
-      const res = await fetch(`${API_BASE}/events/${currentEventId}/reprocess`, { method: 'POST' });
+      const body = reanalyzeModel ? { modelOverride: reanalyzeModel } : {};
+      const res = await fetch(`${API_BASE}/events/${currentEventId}/reprocess`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
       if (res.ok) {
         onReprocess?.();
         await reloadEvent();
@@ -632,14 +640,27 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
               <div className="event-section">
                 <h3 className="event-section-title">
                   🤖 AI Analysis
-                  <button
-                    className="btn-reprocess"
-                    onClick={handleReprocess}
-                    disabled={reprocessing}
-                    title="Re-run AI analysis immediately"
-                  >
-                    {reprocessing ? '⏳ Analyzing...' : '🔄 Reanalyze'}
-                  </button>
+                  <span className="reanalyze-controls">
+                    <select
+                      className="model-override-select"
+                      value={reanalyzeModel}
+                      onChange={(e) => setReanalyzeModel(e.target.value)}
+                      disabled={reprocessing}
+                      title="Pick a model for this reanalysis (or leave as default)"
+                    >
+                      {MODEL_OPTIONS.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      className="btn-reprocess"
+                      onClick={handleReprocess}
+                      disabled={reprocessing}
+                      title="Re-run AI analysis immediately"
+                    >
+                      {reprocessing ? '⏳ Analyzing...' : '🔄 Reanalyze'}
+                    </button>
+                  </span>
                 </h3>
                 {event.aiAnalysis ? (
                   <div className="event-ai-analysis">
@@ -655,6 +676,7 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
                 {event.processedAt && (
                   <div className="event-processed-at">
                     Latest analysis: {format(parseISO(event.processedAt), 'MMM dd, yyyy HH:mm')}
+                    {event.aiModel && <span className="ai-model-badge">{event.aiModel}</span>}
                   </div>
                 )}
               </div>
@@ -755,6 +777,9 @@ function AnalysisHistorySection({ history, renderAnalysis }) {
                 )}
                 {entry.reason && (
                   <span className="analysis-history-reason">{entry.reason}</span>
+                )}
+                {entry.aiModel && (
+                  <span className="ai-model-badge">{entry.aiModel}</span>
                 )}
                 <span className="analysis-history-quick-stats">
                   {entry.readingCount} readings

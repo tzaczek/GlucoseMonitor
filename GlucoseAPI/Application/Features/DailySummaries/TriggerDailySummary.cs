@@ -3,7 +3,7 @@ using MediatR;
 
 namespace GlucoseAPI.Application.Features.DailySummaries;
 
-public record TriggerDailySummaryCommand : IRequest<TriggerDailySummaryResult>;
+public record TriggerDailySummaryCommand(string? ModelOverride = null) : IRequest<TriggerDailySummaryResult>;
 
 public record TriggerDailySummaryResult(bool Success, int ProcessedCount, string Message);
 
@@ -25,7 +25,7 @@ public class TriggerDailySummaryHandler
 
         try
         {
-            var count = await _dailySummaryService.TriggerGenerationAsync(ct);
+            var count = await _dailySummaryService.TriggerGenerationAsync(ct, request.ModelOverride);
             var message = count > 0
                 ? $"Successfully processed {count} daily summary(s)."
                 : "No missing daily summaries to process.";

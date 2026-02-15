@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { format, parseISO, subDays, subHours } from 'date-fns';
 import EventDetailModal from './EventDetailModal';
+import MODEL_OPTIONS from './modelOptions';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
@@ -72,6 +73,7 @@ export default function PeriodSummaryPage() {
   const [formEnd, setFormEnd] = useState('');
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [summaryModel, setSummaryModel] = useState('');
 
   const fetchSummaries = useCallback(async () => {
     try {
@@ -153,6 +155,7 @@ export default function PeriodSummaryPage() {
           name: preset.label,
           periodStart: start.toISOString(),
           periodEnd: now.toISOString(),
+          ...(summaryModel ? { modelOverride: summaryModel } : {}),
         }),
       });
       const data = await res.json();
@@ -194,6 +197,7 @@ export default function PeriodSummaryPage() {
           name: formName || null,
           periodStart: startUtc,
           periodEnd: endUtc,
+          ...(summaryModel ? { modelOverride: summaryModel } : {}),
         }),
       });
       const data = await res.json();
@@ -248,6 +252,21 @@ export default function PeriodSummaryPage() {
               {preset.label}
             </button>
           ))}
+        </div>
+        <div className="period-model-override" style={{ marginTop: 10 }}>
+          <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            AI Model:&nbsp;
+            <select
+              className="model-override-select"
+              value={summaryModel}
+              onChange={(e) => setSummaryModel(e.target.value)}
+              disabled={creating}
+            >
+              {MODEL_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
       </div>
 
@@ -648,6 +667,11 @@ function PeriodSummaryDetail({ detail, onEventClick }) {
             className="period-analysis-text"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(d.aiAnalysis) }}
           />
+          {d.aiModel && (
+            <div className="event-processed-at" style={{ marginTop: 8 }}>
+              <span className="ai-model-badge">{d.aiModel}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

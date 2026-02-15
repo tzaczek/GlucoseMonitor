@@ -11,6 +11,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import MODEL_OPTIONS from './modelOptions';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
@@ -21,6 +22,7 @@ function DailySummariesPage() {
   const [selectedSummaryId, setSelectedSummaryId] = useState(null);
   const [triggering, setTriggering] = useState(false);
   const [triggerResult, setTriggerResult] = useState(null);
+  const [triggerModel, setTriggerModel] = useState('');
 
   const fetchSummaries = useCallback(async () => {
     try {
@@ -52,7 +54,12 @@ function DailySummariesPage() {
     setTriggering(true);
     setTriggerResult(null);
     try {
-      const res = await fetch(`${API_BASE}/dailysummaries/trigger`, { method: 'POST' });
+      const body = triggerModel ? { modelOverride: triggerModel } : {};
+      const res = await fetch(`${API_BASE}/dailysummaries/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
       if (res.ok) {
         setTriggerResult({ success: true, message: data.message });
@@ -69,7 +76,7 @@ function DailySummariesPage() {
       // Auto-hide result after 8 seconds
       setTimeout(() => setTriggerResult(null), 8000);
     }
-  }, [fetchSummaries, fetchStatus]);
+  }, [fetchSummaries, fetchStatus, triggerModel]);
 
   useEffect(() => {
     fetchSummaries();
@@ -117,6 +124,17 @@ function DailySummariesPage() {
               <span className="events-status-label">Pending</span>
             </div>
           )}
+          <select
+            className="model-override-select"
+            value={triggerModel}
+            onChange={(e) => setTriggerModel(e.target.value)}
+            disabled={triggering}
+            title="Pick a model for this generation (or leave as default)"
+          >
+            {MODEL_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
           <button
             className="daily-trigger-btn"
             onClick={handleTrigger}
@@ -696,6 +714,7 @@ function DailySummaryDetailModal({ summaryId, onClose }) {
                 {summary.processedAt && (
                   <div className="event-processed-at">
                     Analyzed: {format(parseISO(summary.processedAt), 'MMM dd, yyyy HH:mm')}
+                    {summary.aiModel && <span className="ai-model-badge">{summary.aiModel}</span>}
                   </div>
                 )}
               </div>
@@ -761,6 +780,11 @@ function DailySummaryDetailModal({ summaryId, onClose }) {
                                 {snapshotDetail.aiAnalysis ? (
                                   <div className="event-ai-analysis" style={{ marginTop: 8 }}>
                                     {renderAnalysis(snapshotDetail.aiAnalysis)}
+                                    {snapshotDetail.aiModel && (
+                                      <div className="event-processed-at" style={{ marginTop: 4 }}>
+                                        <span className="ai-model-badge">{snapshotDetail.aiModel}</span>
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className="event-no-data">No AI analysis in this snapshot.</div>

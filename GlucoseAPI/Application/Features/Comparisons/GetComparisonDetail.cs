@@ -103,6 +103,7 @@ public class GetComparisonDetailHandler : IRequestHandler<GetComparisonDetailQue
 
             AiAnalysis = comp.AiAnalysis,
             AiClassification = comp.AiClassification,
+            AiModel = comp.AiModel,
             CreatedAt = DateTime.SpecifyKind(comp.CreatedAt, DateTimeKind.Utc),
             CompletedAt = comp.CompletedAt.HasValue
                 ? DateTime.SpecifyKind(comp.CompletedAt.Value, DateTimeKind.Utc)

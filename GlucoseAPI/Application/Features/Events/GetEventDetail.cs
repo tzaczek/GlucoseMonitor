@@ -58,6 +58,7 @@ public class GetEventDetailHandler : IRequestHandler<GetEventDetailQuery, Glucos
             PeakTime = stats.PeakTime ?? evt.PeakTime,
             AiAnalysis = evt.AiAnalysis,
             AiClassification = evt.AiClassification,
+            AiModel = evt.AiModel,
             IsProcessed = evt.IsProcessed,
             ProcessedAt = evt.ProcessedAt.HasValue
                 ? DateTime.SpecifyKind(evt.ProcessedAt.Value, DateTimeKind.Utc)
@@ -81,6 +82,7 @@ public class GetEventDetailHandler : IRequestHandler<GetEventDetailQuery, Glucos
         Id = h.Id,
         AiAnalysis = h.AiAnalysis,
         AiClassification = h.AiClassification,
+        AiModel = h.AiModel,
         AnalyzedAt = DateTime.SpecifyKind(h.AnalyzedAt, DateTimeKind.Utc),
         PeriodStart = DateTime.SpecifyKind(h.PeriodStart, DateTimeKind.Utc),
         PeriodEnd = DateTime.SpecifyKind(h.PeriodEnd, DateTimeKind.Utc),

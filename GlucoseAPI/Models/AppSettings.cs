@@ -41,6 +41,9 @@ public static class SettingKeys
 
     // Re-analysis throttle
     public const string ReanalysisMinIntervalMinutes = "Analysis:ReanalysisMinIntervalMinutes";
+
+    // AI model selection
+    public const string GptModelName = "Analysis:GptModelName";
 }
 
 /// <summary>DTO for the settings page.</summary>
@@ -84,6 +87,12 @@ public class AnalysisSettingsDto
     public int ReanalysisMinIntervalMinutes { get; set; } = 30;
 
     public string TimeZone { get; set; } = "Europe/Warsaw";
+
+    /// <summary>
+    /// GPT model to use for AI analysis. Default: gpt-4o-mini.
+    /// </summary>
+    public string GptModelName { get; set; } = "gpt-4o-mini";
+
     public bool IsConfigured { get; set; }
 }
 

@@ -65,6 +65,10 @@ public class GlucoseEvent
     [MaxLength(10)]
     public string? AiClassification { get; set; }
 
+    /// <summary>GPT model used for this analysis (e.g. "gpt-4o-mini").</summary>
+    [MaxLength(50)]
+    public string? AiModel { get; set; }
+
     /// <summary>Whether this event has been fully processed (glucose data gathered + AI analyzed).</summary>
     public bool IsProcessed { get; set; }
 
@@ -101,6 +105,10 @@ public class EventAnalysisHistory
     /// <summary>AI classification: "green", "yellow", or "red".</summary>
     [MaxLength(10)]
     public string? AiClassification { get; set; }
+
+    /// <summary>GPT model used for this analysis (e.g. "gpt-4o-mini").</summary>
+    [MaxLength(50)]
+    public string? AiModel { get; set; }
 
     /// <summary>When this analysis was performed (UTC).</summary>
     public DateTime AnalyzedAt { get; set; }
@@ -228,6 +236,7 @@ public class GlucoseEventDetailDto
     public DateTime? PeakTime { get; set; }
     public string? AiAnalysis { get; set; }
     public string? AiClassification { get; set; }
+    public string? AiModel { get; set; }
     public bool IsProcessed { get; set; }
     public DateTime? ProcessedAt { get; set; }
     public List<GlucoseReadingDto> Readings { get; set; } = new();
@@ -252,6 +261,7 @@ public class EventAnalysisHistoryDto
     public int Id { get; set; }
     public string? AiAnalysis { get; set; }
     public string? AiClassification { get; set; }
+    public string? AiModel { get; set; }
     public DateTime AnalyzedAt { get; set; }
     public DateTime PeriodStart { get; set; }
     public DateTime PeriodEnd { get; set; }

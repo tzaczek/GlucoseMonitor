@@ -499,6 +499,52 @@ using (var scope = app.Services.CreateScope())
                 logger.LogWarning("Could not verify AiUsageLogs table: {Message}", tableEx.Message);
             }
 
+            // Add AiModel column to all AI-analyzed tables
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'GlucoseEvents') AND name = 'AiModel')
+                    BEGIN
+                        ALTER TABLE GlucoseEvents ADD AiModel NVARCHAR(50) NULL;
+                        PRINT 'Added AiModel column to GlucoseEvents.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'EventAnalysisHistory') AND name = 'AiModel')
+                    BEGIN
+                        ALTER TABLE EventAnalysisHistory ADD AiModel NVARCHAR(50) NULL;
+                        PRINT 'Added AiModel column to EventAnalysisHistory.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'DailySummaries') AND name = 'AiModel')
+                    BEGIN
+                        ALTER TABLE DailySummaries ADD AiModel NVARCHAR(50) NULL;
+                        PRINT 'Added AiModel column to DailySummaries.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'DailySummarySnapshots') AND name = 'AiModel')
+                    BEGIN
+                        ALTER TABLE DailySummarySnapshots ADD AiModel NVARCHAR(50) NULL;
+                        PRINT 'Added AiModel column to DailySummarySnapshots.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'GlucoseComparisons') AND name = 'AiModel')
+                    BEGIN
+                        ALTER TABLE GlucoseComparisons ADD AiModel NVARCHAR(50) NULL;
+                        PRINT 'Added AiModel column to GlucoseComparisons.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'PeriodSummaries') AND name = 'AiModel')
+                    BEGIN
+                        ALTER TABLE PeriodSummaries ADD AiModel NVARCHAR(50) NULL;
+                        PRINT 'Added AiModel column to PeriodSummaries.';
+                    END");
+                logger.LogInformation("AiModel column check complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not add AiModel columns: {Message}", tableEx.Message);
+            }
+
             break;
         }
         catch (Exception ex)

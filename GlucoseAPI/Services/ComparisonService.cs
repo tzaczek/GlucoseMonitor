@@ -188,7 +188,7 @@ public class ComparisonService : BackgroundService
 
         var (systemPrompt, userPrompt) = BuildComparisonPrompts(comp, readingsA, eventsA, readingsB, eventsB, tz);
 
-        const string modelName = "gpt-5-mini";
+        var modelName = analysisSettings.GptModelName;
         var gptResult = await gptClient.AnalyzeAsync(
             analysisSettings.GptApiKey, systemPrompt, userPrompt, modelName, 4096, ct);
 
@@ -200,6 +200,7 @@ public class ComparisonService : BackgroundService
             var (cleanAnalysis, classification) = ClassificationParser.Parse(gptResult.Content);
             comp.AiAnalysis = cleanAnalysis;
             comp.AiClassification = classification;
+            comp.AiModel = gptResult.Model ?? modelName;
         }
 
         comp.Status = "completed";

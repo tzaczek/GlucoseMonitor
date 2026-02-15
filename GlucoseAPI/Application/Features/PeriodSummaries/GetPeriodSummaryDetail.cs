@@ -72,6 +72,7 @@ public class GetPeriodSummaryDetailHandler : IRequestHandler<GetPeriodSummaryDet
 
             AiAnalysis = summary.AiAnalysis,
             AiClassification = summary.AiClassification,
+            AiModel = summary.AiModel,
             CreatedAt = DateTime.SpecifyKind(summary.CreatedAt, DateTimeKind.Utc),
             CompletedAt = summary.CompletedAt.HasValue
                 ? DateTime.SpecifyKind(summary.CompletedAt.Value, DateTimeKind.Utc)

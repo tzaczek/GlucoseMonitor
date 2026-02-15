@@ -46,11 +46,13 @@ public class DailySummariesController : ControllerBase
     }
 
     [HttpPost("trigger")]
-    public async Task<ActionResult> TriggerGeneration(CancellationToken ct)
+    public async Task<ActionResult> TriggerGeneration([FromBody] TriggerDailySummaryRequest? request = null, CancellationToken ct = default)
     {
-        var result = await _mediator.Send(new TriggerDailySummaryCommand(), ct);
+        var result = await _mediator.Send(new TriggerDailySummaryCommand(request?.ModelOverride), ct);
         return result.Success
             ? Ok(new { message = result.Message, processedCount = result.ProcessedCount })
             : StatusCode(500, new { message = result.Message });
     }
 }
+
+public record TriggerDailySummaryRequest(string? ModelOverride = null);

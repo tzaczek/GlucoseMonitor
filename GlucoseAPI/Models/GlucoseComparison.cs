@@ -62,6 +62,9 @@ public class GlucoseComparison
     public string? AiAnalysis { get; set; }
     [MaxLength(10)]
     public string? AiClassification { get; set; }
+    /// <summary>GPT model used for this analysis (e.g. "gpt-4o-mini").</summary>
+    [MaxLength(50)]
+    public string? AiModel { get; set; }
 
     // ── Processing state ─────────────────────────────────
     /// <summary>pending | processing | completed | failed</summary>
@@ -124,6 +127,7 @@ public class ComparisonDetailDto
     // AI
     public string? AiAnalysis { get; set; }
     public string? AiClassification { get; set; }
+    public string? AiModel { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
 }

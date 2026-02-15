@@ -4,7 +4,7 @@ using MediatR;
 
 namespace GlucoseAPI.Application.Features.Events;
 
-public record ReprocessEventCommand(int Id) : IRequest<ReprocessEventResult>;
+public record ReprocessEventCommand(int Id, string? ModelOverride = null) : IRequest<ReprocessEventResult>;
 
 public record ReprocessEventResult(bool Found, bool Success, string Message, string? Analysis = null);
 
@@ -31,7 +31,7 @@ public class ReprocessEventHandler : IRequestHandler<ReprocessEventCommand, Repr
 
         try
         {
-            var analysis = await _analyzer.AnalyzeEventAsync(evt, "Manual re-analysis requested by user", ct);
+            var analysis = await _analyzer.AnalyzeEventAsync(evt, "Manual re-analysis requested by user", ct, request.ModelOverride);
 
             return analysis != null
                 ? new ReprocessEventResult(true, true, "Analysis completed successfully.", analysis)

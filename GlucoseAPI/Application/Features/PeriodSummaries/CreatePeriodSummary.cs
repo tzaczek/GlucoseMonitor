@@ -8,7 +8,8 @@ namespace GlucoseAPI.Application.Features.PeriodSummaries;
 public record CreatePeriodSummaryCommand(
     string? Name,
     DateTime PeriodStart,
-    DateTime PeriodEnd
+    DateTime PeriodEnd,
+    string? ModelOverride = null
 ) : IRequest<CreatePeriodSummaryResult>;
 
 public record CreatePeriodSummaryResult(bool Success, int? Id, string Message);
@@ -42,7 +43,7 @@ public class CreatePeriodSummaryHandler : IRequestHandler<CreatePeriodSummaryCom
         await _db.SaveChangesAsync(ct);
 
         // Enqueue for background processing
-        _periodSummaryService.Enqueue(summary.Id);
+        _periodSummaryService.Enqueue(summary.Id, request.ModelOverride);
 
         return new CreatePeriodSummaryResult(true, summary.Id, "Period summary queued for processing.");
     }

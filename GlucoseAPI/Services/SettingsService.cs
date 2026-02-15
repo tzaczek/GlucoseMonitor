@@ -91,6 +91,7 @@ public class SettingsService
             ReanalysisMinIntervalMinutes = int.TryParse(
                 await GetAsync(SettingKeys.ReanalysisMinIntervalMinutes, "30"), out var reanalysisMins) ? reanalysisMins : 30,
             TimeZone = await GetAsync(SettingKeys.DisplayTimeZone, "Europe/Warsaw"),
+            GptModelName = await GetAsync(SettingKeys.GptModelName, "gpt-4o-mini"),
             IsConfigured = !string.IsNullOrEmpty(apiKey)
         };
     }
@@ -102,5 +103,6 @@ public class SettingsService
         await SetAsync(SettingKeys.AnalysisIntervalMinutes, dto.AnalysisIntervalMinutes.ToString());
         await SetAsync(SettingKeys.ReanalysisMinIntervalMinutes, dto.ReanalysisMinIntervalMinutes.ToString());
         await SetAsync(SettingKeys.DisplayTimeZone, dto.TimeZone);
+        await SetAsync(SettingKeys.GptModelName, dto.GptModelName);
     }
 }

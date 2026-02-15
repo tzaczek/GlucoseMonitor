@@ -20,7 +20,7 @@ public class PeriodSummaryService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<PeriodSummaryService> _logger;
     private readonly INotificationService _notifications;
-    private readonly ConcurrentQueue<int> _queue = new();
+    private readonly ConcurrentQueue<(int Id, string? ModelOverride)> _queue = new();
     private readonly SemaphoreSlim _signal = new(0);
 
     private readonly IEventLogger _eventLogger;
@@ -40,9 +40,9 @@ public class PeriodSummaryService : BackgroundService
     /// <summary>
     /// Enqueue a period summary for background processing. Called after creating the DB row.
     /// </summary>
-    public void Enqueue(int summaryId)
+    public void Enqueue(int summaryId, string? modelOverride = null)
     {
-        _queue.Enqueue(summaryId);
+        _queue.Enqueue((summaryId, modelOverride));
         _signal.Release();
     }
 
@@ -57,20 +57,20 @@ public class PeriodSummaryService : BackgroundService
         {
             await _signal.WaitAsync(stoppingToken);
 
-            if (_queue.TryDequeue(out var summaryId))
+            if (_queue.TryDequeue(out var item))
             {
                 try
                 {
-                    await ProcessSummaryAsync(summaryId, stoppingToken);
+                    await ProcessSummaryAsync(item.Id, stoppingToken, item.ModelOverride);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    _logger.LogError(ex, "Failed to process period summary {Id}.", summaryId);
+                    _logger.LogError(ex, "Failed to process period summary {Id}.", item.Id);
                     await _eventLogger.LogErrorAsync(Summary,
-                        $"Period summary #{summaryId} failed: {ex.Message}",
-                        source: nameof(PeriodSummaryService), relatedEntityId: summaryId,
+                        $"Period summary #{item.Id} failed: {ex.Message}",
+                        source: nameof(PeriodSummaryService), relatedEntityId: item.Id,
                         relatedEntityType: "PeriodSummary", detail: ex.ToString());
-                    await SetFailedAsync(summaryId, ex.Message, stoppingToken);
+                    await SetFailedAsync(item.Id, ex.Message, stoppingToken);
                 }
             }
         }
@@ -90,7 +90,7 @@ public class PeriodSummaryService : BackgroundService
 
             foreach (var id in unfinished)
             {
-                _queue.Enqueue(id);
+                _queue.Enqueue((id, null));
                 _signal.Release();
             }
 
@@ -125,7 +125,7 @@ public class PeriodSummaryService : BackgroundService
         }
     }
 
-    private async Task ProcessSummaryAsync(int summaryId, CancellationToken ct)
+    private async Task ProcessSummaryAsync(int summaryId, CancellationToken ct, string? modelOverride = null)
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GlucoseDbContext>();
@@ -188,7 +188,7 @@ public class PeriodSummaryService : BackgroundService
 
         var (systemPrompt, userPrompt) = BuildPrompts(summary, readings, events, tz);
 
-        const string modelName = "gpt-5-mini";
+        var modelName = !string.IsNullOrWhiteSpace(modelOverride) ? modelOverride : analysisSettings.GptModelName;
         var gptResult = await gptClient.AnalyzeAsync(
             analysisSettings.GptApiKey, systemPrompt, userPrompt, modelName, 4096, ct);
 
@@ -200,6 +200,7 @@ public class PeriodSummaryService : BackgroundService
             var (cleanAnalysis, classification) = ClassificationParser.Parse(gptResult.Content);
             summary.AiAnalysis = cleanAnalysis;
             summary.AiClassification = classification;
+            summary.AiModel = gptResult.Model ?? modelName;
         }
 
         summary.Status = "completed";

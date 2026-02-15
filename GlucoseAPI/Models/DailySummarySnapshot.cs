@@ -79,6 +79,10 @@ public class DailySummarySnapshot
     [MaxLength(10)]
     public string? AiClassification { get; set; }
 
+    /// <summary>GPT model used for this analysis (e.g. "gpt-4o-mini").</summary>
+    [MaxLength(50)]
+    public string? AiModel { get; set; }
+
     /// <summary>Whether AI analysis completed successfully.</summary>
     public bool IsProcessed { get; set; }
 }
@@ -117,4 +121,5 @@ public class DailySummarySnapshotDetailDto : DailySummarySnapshotDto
     public double? TimeAboveRange { get; set; }
     public double? TimeBelowRange { get; set; }
     public string? AiAnalysis { get; set; }
+    public string? AiModel { get; set; }
 }

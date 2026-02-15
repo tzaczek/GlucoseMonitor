@@ -12,7 +12,7 @@ public interface IGptClient
     /// <param name="apiKey">The API key for authentication.</param>
     /// <param name="systemPrompt">The system prompt.</param>
     /// <param name="userPrompt">The user prompt.</param>
-    /// <param name="modelName">The model to use (e.g. "gpt-5-mini").</param>
+    /// <param name="modelName">The model to use (e.g. "gpt-4o-mini").</param>
     /// <param name="maxTokens">Maximum completion tokens.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The result of the API call, including content, usage, and status.</returns>
@@ -20,7 +20,7 @@ public interface IGptClient
         string apiKey,
         string systemPrompt,
         string userPrompt,
-        string modelName = "gpt-5-mini",
+        string modelName = "gpt-4o-mini",
         int maxTokens = 4096,
         CancellationToken ct = default);
 }

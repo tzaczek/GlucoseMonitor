@@ -39,6 +39,7 @@ public class EventAnalyzerTests : IDisposable
         _settingsMock = new Mock<SettingsService>(_db, configMock.Object);
 
         var tzConverter = new TimeZoneConverter(NullLogger<TimeZoneConverter>.Instance);
+        var eventLoggerMock = new Mock<IEventLogger>();
 
         _analyzer = new EventAnalyzer(
             _db,
@@ -46,6 +47,7 @@ public class EventAnalyzerTests : IDisposable
             _gptClientMock.Object,
             _notificationsMock.Object,
             tzConverter,
+            eventLoggerMock.Object,
             NullLogger<EventAnalyzer>.Instance);
     }
 

@@ -791,6 +791,11 @@ function ComparisonDetail({ detail, onEventClick }) {
         <div className="compare-analysis-section">
           <h4>AI Analysis</h4>
           <div className="compare-analysis-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(detail.aiAnalysis) }} />
+          {detail.aiModel && (
+            <div className="event-processed-at" style={{ marginTop: 8 }}>
+              <span className="ai-model-badge">{detail.aiModel}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

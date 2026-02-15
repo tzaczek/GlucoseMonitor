@@ -63,6 +63,7 @@ public class GetDailySummaryDetailHandler
             TimeBelowRange = summary.TimeBelowRange,
             AiAnalysis = summary.AiAnalysis,
             AiClassification = summary.AiClassification,
+            AiModel = summary.AiModel,
             IsProcessed = summary.IsProcessed,
             ProcessedAt = summary.ProcessedAt.HasValue
                 ? DateTime.SpecifyKind(summary.ProcessedAt.Value, DateTimeKind.Utc)

@@ -61,13 +61,13 @@ public class DailySummaryService : BackgroundService
     /// Manually trigger daily summary generation for all days (including today).
     /// Can be called from the API controller.
     /// </summary>
-    public async Task<int> TriggerGenerationAsync(CancellationToken ct)
+    public async Task<int> TriggerGenerationAsync(CancellationToken ct, string? modelOverride = null)
     {
         _logger.LogInformation("Manual daily summary generation triggered.");
-        return await GenerateSummariesAsync(ct, includeToday: true, trigger: "manual");
+        return await GenerateSummariesAsync(ct, includeToday: true, trigger: "manual", modelOverride: modelOverride);
     }
 
-    private async Task<int> GenerateSummariesAsync(CancellationToken ct, bool includeToday, string trigger = "auto")
+    private async Task<int> GenerateSummariesAsync(CancellationToken ct, bool includeToday, string trigger = "auto", string? modelOverride = null)
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GlucoseDbContext>();
@@ -185,7 +185,7 @@ public class DailySummaryService : BackgroundService
 
             try
             {
-                await GenerateDailySummaryAsync(db, gptClient, analysisSettings, tz, date, trigger, ct);
+                await GenerateDailySummaryAsync(db, gptClient, analysisSettings, tz, date, trigger, ct, modelOverride);
                 processedCount++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -207,7 +207,8 @@ public class DailySummaryService : BackgroundService
         TimeZoneInfo tz,
         DateTime localDate,
         string trigger,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? modelOverride = null)
     {
         // Convert local midnight boundaries to UTC (domain logic)
         var (periodStartUtc, periodEndUtc) = TimeZoneConverter.GetDayBoundariesUtc(localDate, tz);
@@ -274,7 +275,7 @@ public class DailySummaryService : BackgroundService
         var isToday = localDate == TimeZoneInfo.ConvertTimeFromUtc(nowUtc, tz).Date;
         var (systemPrompt, userPrompt) = BuildDailySummaryPrompts(summary, events, readings, tz, isToday);
 
-        const string modelName = "gpt-5-mini";
+        var modelName = !string.IsNullOrWhiteSpace(modelOverride) ? modelOverride : analysisSettings.GptModelName;
         var gptResult = await gptClient.AnalyzeAsync(
             analysisSettings.GptApiKey, systemPrompt, userPrompt, modelName, 4096, ct);
 
@@ -288,6 +289,7 @@ public class DailySummaryService : BackgroundService
 
             summary.AiAnalysis = cleanAnalysis;
             summary.AiClassification = classification;
+            summary.AiModel = gptResult.Model ?? modelName;
             summary.IsProcessed = true;
             summary.ProcessedAt = DateTime.UtcNow;
             summary.UpdatedAt = DateTime.UtcNow;
@@ -318,6 +320,7 @@ public class DailySummaryService : BackgroundService
                 TimeBelowRange = dayStats.TimeBelowRange,
                 AiAnalysis = cleanAnalysis,
                 AiClassification = classification,
+                AiModel = gptResult.Model ?? modelName,
                 IsProcessed = true
             };
             db.DailySummarySnapshots.Add(snapshot);

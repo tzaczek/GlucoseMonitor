@@ -382,6 +382,38 @@ function SettingsPage() {
                 placeholder="sk-..."
               />
             </div>
+            <div className="form-group">
+              <label htmlFor="gptModelName">AI Model</label>
+              <select
+                id="gptModelName"
+                name="gptModelName"
+                value={analysisSettings.gptModelName || 'gpt-4o-mini'}
+                onChange={handleAnalysisChange}
+              >
+                <optgroup label="GPT-5.x (Newest)">
+                  <option value="gpt-5.2">GPT-5.2 — $1.75 / $14.00 per 1M tokens (flagship)</option>
+                  <option value="gpt-5-mini">GPT-5 Mini — $0.30 / $1.00 per 1M tokens</option>
+                </optgroup>
+                <optgroup label="GPT-4.1">
+                  <option value="gpt-4.1">GPT-4.1 — $2.00 / $8.00 per 1M tokens (1M ctx)</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini — $0.40 / $1.60 per 1M tokens</option>
+                  <option value="gpt-4.1-nano">GPT-4.1 Nano — $0.10 / $0.40 per 1M tokens</option>
+                </optgroup>
+                <optgroup label="Reasoning (o-series)">
+                  <option value="o4-mini">o4-mini — $1.10 / $4.40 per 1M tokens</option>
+                  <option value="o3-mini">o3-mini — $1.10 / $4.40 per 1M tokens</option>
+                </optgroup>
+                <optgroup label="GPT-4o">
+                  <option value="gpt-4o">GPT-4o — $2.50 / $10.00 per 1M tokens</option>
+                  <option value="gpt-4o-mini">GPT-4o Mini — $0.15 / $0.60 per 1M tokens</option>
+                </optgroup>
+                <optgroup label="Legacy">
+                  <option value="gpt-4-turbo">GPT-4 Turbo — $10.00 / $30.00 per 1M tokens</option>
+                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo — $0.50 / $1.50 per 1M tokens</option>
+                </optgroup>
+              </select>
+              <span className="form-hint">Model used for all AI analyses. Cost shown as input / output per 1M tokens.</span>
+            </div>
           </div>
 
           <div className="form-section">

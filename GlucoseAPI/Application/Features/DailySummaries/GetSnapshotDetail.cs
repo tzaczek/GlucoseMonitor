@@ -45,6 +45,7 @@ public class GetSnapshotDetailHandler
             TimeBelowRange = snap.TimeBelowRange,
             AiAnalysis = snap.AiAnalysis,
             AiClassification = snap.AiClassification,
+            AiModel = snap.AiModel,
             IsProcessed = snap.IsProcessed,
             HasAnalysis = !string.IsNullOrEmpty(snap.AiAnalysis)
         };

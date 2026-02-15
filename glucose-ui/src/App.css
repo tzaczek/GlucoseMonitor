@@ -2070,8 +2070,47 @@ body::before {
   margin-top: 8px;
 }
 
-.btn-reprocess {
+.ai-model-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--accent-secondary);
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+}
+
+.reanalyze-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+}
+
+.model-override-select {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  max-width: 180px;
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+
+.model-override-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-reprocess {
+  margin-left: 0;
   padding: 5px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(167, 139, 250, 0.25);
