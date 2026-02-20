@@ -81,6 +81,26 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **Period filtering**: View usage for any time period (7d, 2w, 1m, 3m, 6m, 1y, all time, or custom).
 - **Real-time updates**: Usage page automatically refreshes via SignalR when new API calls are made.
 
+### 💬 AI Chat
+- **Interactive conversations about your glucose data**: Ask AI free-form questions about your glucose patterns, meal responses, trends, and get personalized insights through a chat interface.
+- **Graph-based multi-period selection**: Instead of typing dates, select data periods directly on a zoomable glucose chart by dragging. Each selection becomes a named period that can be referenced in prompts.
+  - **Drag-to-select**: Click and drag on the glucose graph to highlight any time range — not restricted to event boundaries.
+  - **Mouse wheel zoom**: Scroll to zoom in/out on the graph for precise period selection.
+  - **Zoom controls**: "+", "−", and "Reset" buttons for additional zoom control.
+  - **Configurable range**: View last 3, 7, 14, 30, or 90 days of glucose data on the selector graph.
+  - **Named periods**: Each selected period gets an auto-generated descriptive name (e.g., "Feb 17 Night", "Feb 18 Afternoon") that can be edited inline. Use these names in prompts to reference specific periods.
+  - **Color-coded overlays**: Each period is displayed with a unique color on both the selector graph and the thread chart, making it easy to distinguish multiple periods visually.
+  - **Event markers**: Events (meals, activities) within the visible range are shown as dots on the graph and listed below it with clickable links.
+- **Prompt templates**: Create reusable prompt templates for common analysis tasks (e.g., "Overnight Analysis", "Meal Comparison", "Weekly Summary"). Templates support placeholders like `{glucose_data}`, `{events}`, and `{period_label}` that are automatically filled with real data.
+- **Prompt preview & editing**: When using a template, the fully interpolated prompt is shown as a preview before sending. You can edit it freely or reset to the original template.
+- **Per-message model selection**: Choose which GPT model to use for each message — set a default for the session and override it per follow-up.
+- **Follow-up conversations**: Continue chatting with the AI about the same data — ask clarifying questions, request deeper analysis, or explore different angles. The AI retains full conversation context.
+- **Thread glucose chart**: Each chat thread displays a zoomable glucose chart with all selected periods highlighted and color-coded. Events within each period are shown as labeled markers with clickable links to event details.
+- **Event links in responses**: AI responses that reference specific event IDs (e.g., "Event #42") are automatically turned into clickable links that open the event detail modal.
+- **Real-time responses**: AI responses are streamed to the browser via SignalR — no need to refresh or wait on a loading screen.
+- **Session management**: All conversations are saved persistently. Browse, resume, or permanently delete individual sessions or all sessions at once.
+- **Background processing**: Chat messages are processed asynchronously. The queue-based architecture handles multiple simultaneous conversations and recovers from crashes.
+
 ### 📊 Period Comparison
 - **Compare any two time periods**: Select two glucose monitoring periods — hours, days, weeks, or custom date ranges — and see how your glucose control differed.
 - **Quick presets**: One-click comparisons for common scenarios: last 6h/12h/24h/48h/7d/14d/30d vs the previous equivalent period.
@@ -203,6 +223,7 @@ FreeStyle Libre Sensor
    │  │   DataBackupService        │──── Periodic JSON/CSV export
    │  │   ComparisonService       │──── Period comparison analysis (AI)
    │  │   PeriodSummaryService   │──── Arbitrary period summaries (AI)
+   │  │   ChatService             │──── Interactive AI chat with multi-period context
    │  │   DatabaseBackupService   │──── Daily SQL Server .bak backup/restore
    │  └───────────────────────────┘  │
    │            │                    │

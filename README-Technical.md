@@ -57,8 +57,9 @@ GlucoseAPI/
 │   │   ├── INotificationService.cs     # Real-time notification abstraction
 │   │   └── IEventLogger.cs             # Central event logging abstraction + EventCategory constants
 │   └── Features/                       # MediatR CQRS handlers (one file per use case)
-│       ├── Glucose/                    # GetLatestReading, GetHistory, GetStats, GetDates
+│       ├── Glucose/                    # GetLatestReading, GetHistory, GetStats, GetDates, GetRange
 │       ├── Events/                     # GetEvents, GetEventDetail, GetStatus, Reprocess
+│       ├── Chat/                       # CreateSession, SendMessage, DeleteSession, DeleteAll, Templates
 │       ├── Comparisons/               # CreateComparison, GetComparisons, GetDetail, Delete
 │       ├── PeriodSummaries/           # CreatePeriodSummary, GetPeriodSummaries, GetDetail, Delete
 │       ├── EventLogs/                 # GetEventLogs (filtered + paginated)
@@ -79,8 +80,9 @@ GlucoseAPI/
 │       └── EventLogger.cs             # IEventLogger implementation (DB + SignalR push)
 │
 ├── Controllers/                  # REST API endpoints (thin MediatR dispatchers)
-│   ├── GlucoseController.cs      # /api/glucose/* — readings, stats, history
+│   ├── GlucoseController.cs      # /api/glucose/* — readings, stats, history, range
 │   ├── EventsController.cs       # /api/events/* — meal/activity events
+│   ├── ChatController.cs         # /api/chat/* — AI chat sessions, messages, templates
 │   ├── ComparisonController.cs  # /api/comparison/* — period comparisons
 │   ├── PeriodSummaryController.cs # /api/periodsummary/* — arbitrary period summaries
 │   ├── DailySummariesController.cs # /api/dailysummaries/* — daily summaries
@@ -102,6 +104,7 @@ GlucoseAPI/
 │   ├── GlucoseEvent.cs           # Meal/activity event + AI analysis + history
 │   ├── GlucoseComparison.cs     # Period comparison entity + DTOs
 │   ├── PeriodSummary.cs         # Arbitrary period summary entity + DTOs
+│   ├── ChatModels.cs            # Chat session, message, template, period entities + DTOs
 │   ├── EventLog.cs              # Application event log entity + DTOs
 │   ├── DailySummary.cs           # Daily aggregation entity
 │   ├── DailySummarySnapshot.cs   # Immutable snapshot per generation run
@@ -119,6 +122,7 @@ GlucoseAPI/
     ├── DataBackupService.cs      # Periodic JSON/CSV backup to local filesystem
     ├── ComparisonService.cs      # Background: processes period comparisons with AI
     ├── PeriodSummaryService.cs  # Background: processes arbitrary period summaries with AI
+    ├── ChatService.cs           # Background: processes AI chat sessions with multi-period context
     ├── DatabaseBackupService.cs  # Daily SQL Server .bak backup + manual trigger/restore
     ├── ReportService.cs          # Generates PDF reports using QuestPDF + SkiaSharp
     ├── LibreLinkClient.cs        # Unofficial LibreLink Up HTTP client
@@ -186,6 +190,9 @@ Program.cs registers:
       (Enqueue from CreateComparison handler, processes queue, calls GPT)
     - PeriodSummaryService       — processes arbitrary period summaries in background
       (Enqueue from CreatePeriodSummary handler, processes queue, calls GPT)
+    - ChatService                — processes AI chat messages in background
+      (Enqueue from ChatController, builds multi-period glucose context, calls GPT,
+       pushes responses via SignalR, supports per-message model selection)
     - DatabaseBackupService      — daily SQL Server .bak backup (retained 7 days)
       (TriggerBackupAsync / RestoreFromBackupAsync for manual backup/restore via Settings)
 
@@ -310,6 +317,49 @@ The database is created via `EnsureCreated()` at startup, with additional `ALTER
 └──────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────┐
+│            ChatSessions                       │
+│──────────────────────────────────────────────│
+│ Id (PK)                                      │
+│ Title                                        │
+│ PeriodStart, PeriodEnd (UTC, nullable)       │
+│ PeriodDescription (nullable, natural lang.)  │
+│ PeriodsJson (JSON array of ChatPeriod)       │
+│ TemplateName (nullable)                      │
+│ Model (nullable, default AI model override)  │
+│ CreatedAt, UpdatedAt                         │
+└──────────────────┬───────────────────────────┘
+                   │
+                   │ (1:N)
+                   ▼
+┌──────────────────────────────────────────────┐
+│            ChatMessages                       │
+│──────────────────────────────────────────────│
+│ Id (PK)                                      │
+│ ChatSessionId (FK → ChatSessions)            │
+│ Role (user / assistant)                      │
+│ Content (text)                               │
+│ Model (nullable, model used for this msg)    │
+│ InputTokens, OutputTokens (nullable)         │
+│ DurationMs (nullable)                        │
+│ CreatedAt                                    │
+└──────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────┐
+│         ChatPromptTemplates                   │
+│──────────────────────────────────────────────│
+│ Id (PK)                                      │
+│ Name (unique)                                │
+│ Template (prompt text with {placeholders})   │
+│ Description (optional)                       │
+│ CreatedAt, UpdatedAt                         │
+└──────────────────────────────────────────────┘
+
+ChatPeriod (serialized in PeriodsJson):
+  - Name (string, user-editable label)
+  - Start, End (DateTime)
+  - Color (hex string, e.g., "#6366f1")
+
+┌──────────────────────────────────────────────┐
 │            AiUsageLogs                        │
 │──────────────────────────────────────────────│
 │ Id (PK)                                      │
@@ -352,6 +402,9 @@ The database is created via `EnsureCreated()` at startup, with additional `ALTER
 - `GlucoseComparisons`: Status, CreatedAt
 - `PeriodSummaries`: Status, CreatedAt
 - `EventLogs`: Timestamp, Level, Category
+- `ChatSessions`: CreatedAt, UpdatedAt
+- `ChatMessages`: ChatSessionId, CreatedAt
+- `ChatPromptTemplates`: Name (unique)
 - `DailySummaries`: Date (unique), IsProcessed
 - `DailySummarySnapshots`: DailySummaryId, Date, GeneratedAt
 
@@ -503,7 +556,41 @@ Created via POST /api/periodsummary:
   - Calls PeriodSummaryService.Enqueue(id)
 ```
 
-#### 8. DatabaseBackupService (once per day)
+#### 8. ChatService (on-demand queue)
+```
+Startup:
+  - Re-queues any chat messages left unprocessed (crash recovery)
+Queue processing (event-driven, not polling):
+  1. Wait for signal (SemaphoreSlim)
+  2. Dequeue (sessionId, messageId) pair
+  3. Load ChatSession with all messages for conversation context
+  4. Build glucose context:
+     a. If session has Periods (multi-period): call BuildMultiPeriodContextAsync
+        → for each named period, fetch glucose readings + events from DB
+        → format as labeled sections: === PERIOD: "name" ===
+     b. Else if session has PeriodStart/PeriodEnd (legacy single period):
+        → fetch readings + events for that range
+     c. Else: no glucose context
+  5. InterpolateTemplate: replace {glucose_data}, {events}, {period_label}
+     placeholders in the user prompt with actual data (supports both
+     single-brace and double-brace syntax)
+  6. Build conversation: system prompt + all prior messages + current user prompt
+  7. Call GPT API (using session-level or per-message model override)
+  8. Save assistant response as ChatMessage with token counts + duration
+  9. Update session.UpdatedAt
+  10. SignalR → "ChatMessageReceived" with sessionId + new message
+  On failure: save error message as assistant response, notify via SignalR
+
+Created via POST /api/chat/sessions:
+  - ChatController creates session, saves initial user message
+  - Calls ChatService.Enqueue(sessionId, messageId)
+
+Follow-up via POST /api/chat/sessions/{id}/messages:
+  - ChatController appends user message to session
+  - Calls ChatService.Enqueue(sessionId, messageId)
+```
+
+#### 9. DatabaseBackupService (once per day)
 ```
 Startup delay: 3 minutes
 On startup:
@@ -535,6 +622,7 @@ Manual restore (POST /api/settings/backup/restore):
 | GET | `/api/glucose/history?hours=24` | Historical readings for time period |
 | GET | `/api/glucose/stats?hours=24` | Aggregated stats for time period |
 | GET | `/api/glucose/dates` | All dates that have readings |
+| GET | `/api/glucose/range?from=&to=` | Glucose readings + events for a specific date range |
 | GET | `/api/events` | List all events (summary DTOs) |
 | GET | `/api/events/{id}` | Event detail + readings + analysis history |
 | GET | `/api/events/status` | Processing status (total/processed/pending) |
@@ -542,6 +630,15 @@ Manual restore (POST /api/settings/backup/restore):
 | GET | `/api/comparison` | List all period comparisons |
 | GET | `/api/comparison/{id}` | Comparison detail + readings + events + AI |
 | POST | `/api/comparison` | Create new comparison (queued for background processing) |
+| GET | `/api/chat/sessions` | List all chat sessions (summary DTOs with message count, periods) |
+| GET | `/api/chat/sessions/{id}` | Chat session detail with all messages and periods |
+| POST | `/api/chat/sessions` | Create new chat session with optional periods, template, and initial message |
+| POST | `/api/chat/sessions/{id}/messages` | Send a follow-up message in a chat session (optional model override) |
+| DELETE | `/api/chat/sessions/{id}` | Delete a chat session and all its messages |
+| DELETE | `/api/chat/sessions` | Delete all chat sessions (bulk) |
+| GET | `/api/chat/templates` | List all prompt templates |
+| POST | `/api/chat/templates` | Create or update a prompt template |
+| DELETE | `/api/chat/templates/{name}` | Delete a prompt template |
 | DELETE | `/api/comparison/{id}` | Delete a comparison |
 | GET | `/api/periodsummary` | List all period summaries |
 | GET | `/api/periodsummary/{id}` | Period summary detail + readings + events + AI |
@@ -587,7 +684,9 @@ Manual restore (POST /api/settings/backup/restore):
 | `ComparisonsUpdated` | count (int) | ComparisonService after processing a comparison |
 | `PeriodSummariesUpdated` | count (int) | PeriodSummaryService after processing a period summary |
 | `EventLogsUpdated` | count (int) | EventLogger after writing any application event log entry |
-| `AiUsageUpdated` | count (int) | EventAnalyzer, DailySummaryService, ComparisonService, PeriodSummaryService after API calls |
+| `ChatMessageReceived` | { sessionId, message } | ChatService after AI generates a response |
+| `ChatPeriodResolved` | { sessionId, periodStart, periodEnd } | ChatService after resolving natural language period description |
+| `AiUsageUpdated` | count (int) | EventAnalyzer, DailySummaryService, ComparisonService, PeriodSummaryService, ChatService after API calls |
 
 ### AI Integration (OpenAI GPT)
 
@@ -598,6 +697,8 @@ Manual restore (POST /api/settings/backup/restore):
 - **Glucose stats**: Computed by the domain service `GlucoseStatsCalculator` — centralizing the logic that was previously duplicated across services.
 - **Event analysis prompt**: Includes before/after glucose readings, note content, and glucose statistics. When other events fall within the same glucose observation window (e.g., exercise 30 min after a meal), they are included as an "OTHER EVENTS IN THIS GLUCOSE WINDOW" section listing each overlapping event's title, time offset, content, glucose level, and classification. The system prompt instructs the AI to factor overlapping events into the analysis, attribute glucose patterns to combined effects, and flag when isolating the main event's impact is difficult. Asks for baseline assessment, response analysis, spike analysis, recovery, overall assessment, and a practical tip.
 - **Daily summary prompt**: Includes full-day overview, dedicated overnight glucose analysis (00:00–06:00) with trend detection, morning glucose analysis (06:00–09:00) with dawn phenomenon detection and fasting glucose pre-diabetes flag (≥100 mg/dL), hourly glucose profile, event-by-event breakdown, and a sampled glucose timeline. Asks for day overview, key metrics, overnight analysis, morning glucose, meal impacts, patterns, best/worst moments, and actionable insights.
+- **Chat prompt**: The system prompt instructs the AI to act as a diabetes health assistant with access to the user's glucose data and events. When multiple named periods are provided, the context includes labeled sections for each period with full glucose readings, statistics, and events. Template placeholders (`{glucose_data}`, `{events}`, `{period_label}`) are interpolated before sending. Follow-up messages carry the full conversation history for continuity.
+- **Chat model selection**: Users can choose a specific GPT model per session (default) or per follow-up message. If no model is specified, the system falls back to the default model configured in settings.
 - **Usage logging**: Every API call (success or failure) is logged to `AiUsageLogs` with model name, token counts, HTTP status, finish reason, and duration. Clients are notified via `INotificationService.NotifyAiUsageUpdatedAsync()`.
 - **Cost estimation**: `AiUsageController` maintains a static pricing dictionary for known models and computes estimated cost per call and in aggregate.
 
@@ -658,6 +759,7 @@ glucose-ui/
         ├── DailySummariesPage.js  # Daily summaries list + detail modal
         ├── ComparePage.js         # Period comparison (form, chart overlay, AI analysis)
         ├── PeriodSummaryPage.js   # Arbitrary period summaries (presets, custom, chart, AI analysis)
+        ├── ChatPage.js            # AI Chat with graph-based multi-period selection + zoom
         ├── EventLogPage.js        # Application event log with filtering, pagination, real-time updates
         ├── NotesPage.js           # Samsung Notes browser
         ├── AiUsagePage.js         # AI usage dashboard (charts, logs, costs)
@@ -667,7 +769,7 @@ glucose-ui/
 
 ### Key Design Decisions
 
-1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Summaries, Compare, Event Log, AI Usage, Reports, Settings.
+1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Summaries, Compare, AI Chat, Event Log, AI Usage, Reports, Settings.
 2. **SignalR → Custom Events**: The SignalR connection lives in `App.js`. Events like `NotesUpdated` and `EventsUpdated` are re-dispatched as `window.dispatchEvent(new CustomEvent(...))` so child components can listen independently without prop drilling.
 3. **AI Usage versioning**: The `AiUsageUpdated` SignalR event increments an `aiUsageVersion` counter in App.js. The `AiUsagePage` component receives this as a React `key` prop, forcing a complete remount and fresh data fetch — solving the problem of browser-cached API responses.
 4. **Cache busting**: AI usage API calls use `{ cache: 'no-store' }` to prevent browser HTTP caching.
@@ -705,6 +807,10 @@ App.js SignalR listener
     │       └──▶ PeriodSummaryPage listens → reloads list + refreshes detail
     ├──▶ EventLogsUpdated → window.dispatchEvent('eventLogsUpdated')
     │       └──▶ EventLogPage listens → reloads log entries in real time
+    ├──▶ ChatMessageReceived → window.dispatchEvent('chatMessageReceived')
+    │       └──▶ ChatPage listens → appends AI response to active thread
+    ├──▶ ChatPeriodResolved → window.dispatchEvent('chatPeriodResolved')
+    │       └──▶ ChatPage listens → updates period start/end from AI extraction
     └──▶ AiUsageUpdated → setAiUsageVersion(v => v + 1)
             └──▶ AiUsagePage key={version} → remount → fresh fetch
 ```
@@ -897,7 +1003,7 @@ DDD solves these by enforcing clear boundaries between **what the app does** (do
 #### `INotificationService`
 - **Purpose**: Abstracts SignalR notifications. Previously, services injected `IHubContext<GlucoseHub>` directly and called `SendAsync("EventsUpdated", ...)` with string-typed event names.
 - **Why an interface**: Decouples services from SignalR (testable with mocks), centralizes event name strings in one place, and would allow switching to a different push mechanism (e.g., WebPush, SSE) without changing services.
-- **Contract**: Five methods — `NotifyNewGlucoseDataAsync`, `NotifyEventsUpdatedAsync`, `NotifyDailySummariesUpdatedAsync`, `NotifyAiUsageUpdatedAsync`, `NotifyNotesUpdatedAsync`.
+- **Contract**: Seven methods — `NotifyNewGlucoseDataAsync`, `NotifyEventsUpdatedAsync`, `NotifyDailySummariesUpdatedAsync`, `NotifyAiUsageUpdatedAsync`, `NotifyNotesUpdatedAsync`, `NotifyChatMessageReceivedAsync`, `NotifyChatPeriodResolvedAsync`.
 
 ### Infrastructure Layer — `GlucoseAPI/Infrastructure/`
 

@@ -13,6 +13,7 @@ A **self-hosted Continuous Glucose Monitoring (CGM) dashboard** that connects to
 | 📊 **Real-Time Dashboard** | Live glucose value, trend arrows, interactive chart with zoom, target range visualization (70–180 mg/dL), and flexible time ranges (6h → 90d) |
 | 🍽️ **Meal & Activity Events** | Automatic correlation of Samsung Notes with glucose readings — see how each meal affects your glucose |
 | 🤖 **AI-Powered Analysis** | GPT analyzes each event (spike severity, recovery, tips) and classifies it as 🟢 Good / 🟡 Concerning / 🔴 Problematic |
+| 💬 **AI Chat** | Interactive chat with AI about your glucose data — select multiple periods on a zoomable graph, name them, compare them, and ask follow-up questions with per-message model selection |
 | 📅 **Daily Summaries** | Automatic daily aggregation with AI commentary on patterns, trends, and actionable suggestions |
 | 📄 **PDF Reports** | Professional reports for your doctor with glucose trends, statistics, time-in-range, and AI highlights |
 | 📝 **Samsung Notes Browser** | Browse, search, and preview all your Samsung Notes with media support |
@@ -201,16 +202,21 @@ Glucose/
 ├── GlucoseAPI/                 # ASP.NET Core backend
 │   ├── Domain/                 # Pure business logic (no I/O)
 │   ├── Application/            # MediatR CQRS handlers + interfaces
+│   │   └── Features/Chat/      # AI Chat CQRS commands & queries
 │   ├── Infrastructure/         # External API adapters (OpenAI, SignalR)
 │   ├── Controllers/            # Thin REST API endpoints
 │   ├── Services/               # Background services + orchestration
+│   │   └── ChatService.cs      # Background queue processor for AI chat
 │   ├── Models/                 # Entity models + DTOs
+│   │   └── ChatModels.cs       # Chat session, message, template, period entities
 │   └── Data/                   # EF Core DbContext
 │
 ├── GlucoseAPI.Tests/           # Automated test suite
 │
 └── glucose-ui/                 # React frontend
-    └── src/components/         # UI components
+    └── src/components/
+        ├── ChatPage.js         # AI Chat with graph-based period selection
+        └── ...                 # Dashboard, Events, Summaries, Reports, Settings
 ```
 
 ---
