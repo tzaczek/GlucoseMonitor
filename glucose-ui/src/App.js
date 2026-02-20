@@ -12,6 +12,7 @@ import ReportsPage from './components/ReportsPage';
 import ComparePage from './components/ComparePage';
 import PeriodSummaryPage from './components/PeriodSummaryPage';
 import EventLogPage from './components/EventLogPage';
+import ChatPage from './components/ChatPage';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
@@ -179,6 +180,21 @@ function App() {
       window.dispatchEvent(new CustomEvent('eventLogsUpdated'));
     });
 
+    connection.on('ChatMessageCompleted', (data) => {
+      console.log(`[SignalR] Chat message completed:`, data);
+      window.dispatchEvent(new CustomEvent('chatMessageCompleted', { detail: data }));
+    });
+
+    connection.on('ChatSessionsUpdated', (count) => {
+      console.log(`[SignalR] ${count} chat session(s) updated.`);
+      window.dispatchEvent(new CustomEvent('chatSessionsUpdated'));
+    });
+
+    connection.on('ChatPeriodResolved', (data) => {
+      console.log(`[SignalR] Chat period resolved:`, data);
+      window.dispatchEvent(new CustomEvent('chatPeriodResolved', { detail: data }));
+    });
+
     connection.onreconnecting(() => {
       console.log('[SignalR] Reconnecting...');
     });
@@ -336,6 +352,12 @@ function App() {
             Compare
           </button>
           <button
+            className={page === 'chat' ? 'active' : ''}
+            onClick={() => setPage('chat')}
+          >
+            Chat
+          </button>
+          <button
             className={page === 'aiusage' ? 'active' : ''}
             onClick={() => setPage('aiusage')}
           >
@@ -364,6 +386,7 @@ function App() {
 
       {page === 'periodsummary' && <PeriodSummaryPage />}
       {page === 'compare' && <ComparePage />}
+      {page === 'chat' && <ChatPage />}
       {page === 'events' && <EventsPage />}
       {page === 'dailysummaries' && <DailySummariesPage />}
       {page === 'eventlog' && <EventLogPage onNavigate={setPage} />}

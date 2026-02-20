@@ -72,8 +72,8 @@ public class SaveAnalysisSettingsHandler : IRequestHandler<SaveAnalysisSettingsC
         if (string.IsNullOrWhiteSpace(dto.NotesFolderName))
             dto.NotesFolderName = "Cukier";
 
-        // If API key is the mask placeholder, keep the existing key
-        if (dto.GptApiKey.Contains("••••••••"))
+        // If API key is the mask placeholder or empty, keep the existing key
+        if (string.IsNullOrEmpty(dto.GptApiKey) || dto.GptApiKey.Contains("••••••••"))
         {
             var existing = await _settingsService.GetAnalysisSettingsAsync();
             dto.GptApiKey = existing.GptApiKey;
@@ -83,7 +83,7 @@ public class SaveAnalysisSettingsHandler : IRequestHandler<SaveAnalysisSettingsC
         if (dto.AnalysisIntervalMinutes > 120) dto.AnalysisIntervalMinutes = 120;
 
         await _settingsService.SaveAnalysisSettingsAsync(dto);
-        _logger.LogInformation("Analysis settings saved. Folder: {Folder}", dto.NotesFolderName);
+        _logger.LogInformation("Analysis settings saved. Folder: {Folder}, Model: {Model}", dto.NotesFolderName, dto.GptModelName);
 
         return new SaveSettingsResult(true, "Analysis settings saved successfully.");
     }

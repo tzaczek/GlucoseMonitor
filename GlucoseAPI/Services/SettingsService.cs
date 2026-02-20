@@ -99,10 +99,10 @@ public class SettingsService
     public async Task SaveAnalysisSettingsAsync(AnalysisSettingsDto dto)
     {
         await SetAsync(SettingKeys.GptApiKey, dto.GptApiKey);
-        await SetAsync(SettingKeys.AnalysisFolderName, dto.NotesFolderName);
+        await SetAsync(SettingKeys.AnalysisFolderName, dto.NotesFolderName ?? "Cukier");
         await SetAsync(SettingKeys.AnalysisIntervalMinutes, dto.AnalysisIntervalMinutes.ToString());
         await SetAsync(SettingKeys.ReanalysisMinIntervalMinutes, dto.ReanalysisMinIntervalMinutes.ToString());
-        await SetAsync(SettingKeys.DisplayTimeZone, dto.TimeZone);
-        await SetAsync(SettingKeys.GptModelName, dto.GptModelName);
+        await SetAsync(SettingKeys.DisplayTimeZone, dto.TimeZone ?? "Europe/Warsaw");
+        await SetAsync(SettingKeys.GptModelName, dto.GptModelName ?? "gpt-4o-mini");
     }
 }

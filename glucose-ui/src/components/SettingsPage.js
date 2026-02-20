@@ -29,6 +29,8 @@ function SettingsPage() {
     notesFolderName: 'Cukier',
     analysisIntervalMinutes: 15,
     reanalysisMinIntervalMinutes: 30,
+    gptModelName: 'gpt-4o-mini',
+    timeZone: 'Europe/Warsaw',
   });
   const [isConfigured, setIsConfigured] = useState(false);
   const [isAnalysisConfigured, setIsAnalysisConfigured] = useState(false);

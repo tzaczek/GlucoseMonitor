@@ -40,4 +40,13 @@ public class SignalRNotificationService : INotificationService
 
     public Task NotifyEventLogsUpdatedAsync(int count, CancellationToken ct = default)
         => _hubContext.Clients.All.SendAsync("EventLogsUpdated", count, ct);
+
+    public Task NotifyChatMessageCompletedAsync(int sessionId, int messageId, CancellationToken ct = default)
+        => _hubContext.Clients.All.SendAsync("ChatMessageCompleted", new { sessionId, messageId }, ct);
+
+    public Task NotifyChatSessionsUpdatedAsync(int count, CancellationToken ct = default)
+        => _hubContext.Clients.All.SendAsync("ChatSessionsUpdated", count, ct);
+
+    public Task NotifyChatPeriodResolvedAsync(int sessionId, DateTime periodStart, DateTime periodEnd, CancellationToken ct = default)
+        => _hubContext.Clients.All.SendAsync("ChatPeriodResolved", new { sessionId, periodStart, periodEnd }, ct);
 }

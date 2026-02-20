@@ -42,4 +42,12 @@ public class GlucoseController : ControllerBase
         var result = await _mediator.Send(new GetDatesWithReadingsQuery(), ct);
         return Ok(result);
     }
+
+    [HttpGet("range")]
+    public async Task<ActionResult> GetRange(
+        [FromQuery] DateTime start, [FromQuery] DateTime end, CancellationToken ct)
+    {
+        var result = await _mediator.Send(new GetGlucoseRangeQuery(start.ToUniversalTime(), end.ToUniversalTime()), ct);
+        return Ok(result);
+    }
 }

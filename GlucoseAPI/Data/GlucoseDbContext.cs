@@ -18,6 +18,9 @@ public class GlucoseDbContext : DbContext
     public DbSet<GlucoseComparison> GlucoseComparisons => Set<GlucoseComparison>();
     public DbSet<PeriodSummary> PeriodSummaries => Set<PeriodSummary>();
     public DbSet<EventLog> EventLogs => Set<EventLog>();
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<ChatPromptTemplate> ChatPromptTemplates => Set<ChatPromptTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -88,6 +91,27 @@ public class GlucoseDbContext : DbContext
         {
             entity.HasIndex(e => e.Timestamp);
             entity.HasIndex(e => e.Level);
+            entity.HasIndex(e => e.Category);
+        });
+
+        modelBuilder.Entity<ChatSession>(entity =>
+        {
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.UpdatedAt);
+            entity.HasMany(e => e.Messages)
+                  .WithOne(m => m.Session)
+                  .HasForeignKey(m => m.ChatSessionId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ChatMessage>(entity =>
+        {
+            entity.HasIndex(e => e.ChatSessionId);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        modelBuilder.Entity<ChatPromptTemplate>(entity =>
+        {
             entity.HasIndex(e => e.Category);
         });
     }

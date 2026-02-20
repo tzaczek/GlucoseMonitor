@@ -29,4 +29,13 @@ public interface INotificationService
 
     /// <summary>Notify clients that new event log entries have been written.</summary>
     Task NotifyEventLogsUpdatedAsync(int count, CancellationToken ct = default);
+
+    /// <summary>Notify clients that a chat message has been completed (AI response ready).</summary>
+    Task NotifyChatMessageCompletedAsync(int sessionId, int messageId, CancellationToken ct = default);
+
+    /// <summary>Notify clients that the chat session list has changed.</summary>
+    Task NotifyChatSessionsUpdatedAsync(int count, CancellationToken ct = default);
+
+    /// <summary>Notify clients that a chat session's period has been resolved from natural language.</summary>
+    Task NotifyChatPeriodResolvedAsync(int sessionId, DateTime periodStart, DateTime periodEnd, CancellationToken ct = default);
 }

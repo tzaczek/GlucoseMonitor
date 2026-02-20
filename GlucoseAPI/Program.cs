@@ -68,6 +68,8 @@ builder.Services.AddSingleton<DailySummaryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DailySummaryService>());
 builder.Services.AddSingleton<PeriodSummaryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PeriodSummaryService>());
+builder.Services.AddSingleton<ChatService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ChatService>());
 
 // ── MediatR (CQRS) ──────────────────────────────────────
 builder.Services.AddMediatR(cfg =>
@@ -543,6 +545,178 @@ using (var scope = app.Services.CreateScope())
             catch (Exception tableEx)
             {
                 logger.LogWarning("Could not add AiModel columns: {Message}", tableEx.Message);
+            }
+
+            // Create ChatSessions table if it doesn't exist
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'ChatSessions') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE ChatSessions (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Title NVARCHAR(200) NOT NULL DEFAULT '',
+                            PeriodStart DATETIME2 NULL,
+                            PeriodEnd DATETIME2 NULL,
+                            TemplateName NVARCHAR(100) NULL,
+                            Status NVARCHAR(20) NOT NULL DEFAULT 'active',
+                            CreatedAt DATETIME2 NOT NULL,
+                            UpdatedAt DATETIME2 NOT NULL
+                        );
+                        CREATE INDEX IX_ChatSessions_Status ON ChatSessions (Status);
+                        CREATE INDEX IX_ChatSessions_UpdatedAt ON ChatSessions (UpdatedAt);
+                        PRINT 'Created ChatSessions table.';
+                    END");
+
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'ChatMessages') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE ChatMessages (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            ChatSessionId INT NOT NULL,
+                            Role NVARCHAR(20) NOT NULL DEFAULT 'user',
+                            Content NVARCHAR(MAX) NOT NULL DEFAULT '',
+                            AiModel NVARCHAR(50) NULL,
+                            InputTokens INT NULL,
+                            OutputTokens INT NULL,
+                            CostUsd FLOAT NULL,
+                            DurationMs INT NULL,
+                            ReferencedEventIds NVARCHAR(500) NULL,
+                            Status NVARCHAR(20) NOT NULL DEFAULT 'completed',
+                            ErrorMessage NVARCHAR(MAX) NULL,
+                            CreatedAt DATETIME2 NOT NULL,
+                            CONSTRAINT FK_ChatMessages_ChatSessions FOREIGN KEY (ChatSessionId)
+                                REFERENCES ChatSessions(Id) ON DELETE CASCADE
+                        );
+                        CREATE INDEX IX_ChatMessages_ChatSessionId ON ChatMessages (ChatSessionId);
+                        CREATE INDEX IX_ChatMessages_CreatedAt ON ChatMessages (CreatedAt);
+                        PRINT 'Created ChatMessages table.';
+                    END");
+
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'ChatPromptTemplates') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE ChatPromptTemplates (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Name NVARCHAR(100) NOT NULL DEFAULT '',
+                            Category NVARCHAR(50) NOT NULL DEFAULT 'custom',
+                            SystemPrompt NVARCHAR(MAX) NOT NULL DEFAULT '',
+                            UserPromptTemplate NVARCHAR(MAX) NOT NULL DEFAULT '',
+                            IsBuiltIn BIT NOT NULL DEFAULT 0,
+                            SortOrder INT NOT NULL DEFAULT 0,
+                            CreatedAt DATETIME2 NOT NULL,
+                            UpdatedAt DATETIME2 NOT NULL
+                        );
+                        CREATE INDEX IX_ChatPromptTemplates_Category ON ChatPromptTemplates (Category);
+                        PRINT 'Created ChatPromptTemplates table.';
+                    END");
+
+                // Add PeriodDescription column if missing
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('ChatSessions') AND name = 'PeriodDescription')
+                    BEGIN
+                        ALTER TABLE ChatSessions ADD PeriodDescription NVARCHAR(500) NULL;
+                        PRINT 'Added PeriodDescription column to ChatSessions.';
+                    END");
+
+                // Add PeriodsJson column if missing
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('ChatSessions') AND name = 'PeriodsJson')
+                    BEGIN
+                        ALTER TABLE ChatSessions ADD PeriodsJson NVARCHAR(MAX) NULL;
+                        PRINT 'Added PeriodsJson column to ChatSessions.';
+                    END");
+
+                logger.LogInformation("Chat tables check complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not verify Chat tables: {Message}", tableEx.Message);
+            }
+
+            // Seed built-in chat prompt templates
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT 1 FROM ChatPromptTemplates WHERE IsBuiltIn = 1 AND Name = 'Period Summary')
+                    BEGIN
+                        INSERT INTO ChatPromptTemplates (Name, Category, SystemPrompt, UserPromptTemplate, IsBuiltIn, SortOrder, CreatedAt, UpdatedAt)
+                        VALUES (
+                            'Period Summary',
+                            'summary',
+                            'You are a diabetes management assistant generating a comprehensive summary of a glucose monitoring period.
+Analyze the glucose data and events provided. Include: overall control assessment, key metrics, patterns, meal/activity impacts, overnight and morning analysis, and actionable insights.
+Use mg/dL units. Format with markdown. Be friendly and supportive. When mentioning events, use event #ID format for clickable links.
+All timestamps are in the user''s local time.
+
+{{glucose_data}}',
+                            'Please provide a comprehensive summary analysis for this period: {{period_label}}
+
+Focus on overall glucose control, patterns, and actionable recommendations.',
+                            1, 1, GETUTCDATE(), GETUTCDATE()
+                        );
+                        PRINT 'Seeded Period Summary template.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM ChatPromptTemplates WHERE IsBuiltIn = 1 AND Name = 'Period Comparison')
+                    BEGIN
+                        INSERT INTO ChatPromptTemplates (Name, Category, SystemPrompt, UserPromptTemplate, IsBuiltIn, SortOrder, CreatedAt, UpdatedAt)
+                        VALUES (
+                            'Period Comparison',
+                            'comparison',
+                            'You are a diabetes management assistant comparing glucose patterns. Analyze the glucose data and events provided. Compare key metrics, patterns, event impacts, and identify what caused differences. Provide actionable insights.
+Use mg/dL units. Format with markdown. Be friendly and supportive. When mentioning events, use event #ID format for clickable links.
+All timestamps are in the user''s local time.
+
+{{glucose_data}}',
+                            'Compare the glucose patterns in this period: {{period_label}}
+
+What trends do you see? What days or time periods show the best and worst control? What patterns stand out?',
+                            1, 2, GETUTCDATE(), GETUTCDATE()
+                        );
+                        PRINT 'Seeded Period Comparison template.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM ChatPromptTemplates WHERE IsBuiltIn = 1 AND Name = 'Event Deep Dive')
+                    BEGIN
+                        INSERT INTO ChatPromptTemplates (Name, Category, SystemPrompt, UserPromptTemplate, IsBuiltIn, SortOrder, CreatedAt, UpdatedAt)
+                        VALUES (
+                            'Event Deep Dive',
+                            'custom',
+                            'You are a diabetes management assistant specializing in analyzing specific meals, foods, and activities and their glucose impact. Analyze the events and glucose data provided in detail.
+Use mg/dL units. Format with markdown. Be friendly and supportive. When mentioning events, use event #ID format for clickable links.
+All timestamps are in the user''s local time.
+
+{{glucose_data}}',
+                            'Please analyze the events (meals/activities) in this period in detail: {{period_label}}
+
+Which events had the biggest glucose impact? Are there any recurring patterns with specific foods or activities?',
+                            1, 3, GETUTCDATE(), GETUTCDATE()
+                        );
+                        PRINT 'Seeded Event Deep Dive template.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM ChatPromptTemplates WHERE IsBuiltIn = 1 AND Name = 'General Question')
+                    BEGIN
+                        INSERT INTO ChatPromptTemplates (Name, Category, SystemPrompt, UserPromptTemplate, IsBuiltIn, SortOrder, CreatedAt, UpdatedAt)
+                        VALUES (
+                            'General Question',
+                            'custom',
+                            'You are a knowledgeable diabetes management assistant. The user is tracking their glucose with a CGM. Help them understand their data and answer questions.
+Use mg/dL units. Format with markdown. Be friendly. When mentioning events, use event #ID format for clickable links. All timestamps are in the user''s local time.
+
+{{glucose_data}}',
+                            '{{user_message}}',
+                            1, 4, GETUTCDATE(), GETUTCDATE()
+                        );
+                        PRINT 'Seeded General Question template.';
+                    END");
+
+                logger.LogInformation("Chat template seeding complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not seed chat templates: {Message}", tableEx.Message);
             }
 
             break;
