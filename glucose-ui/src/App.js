@@ -46,6 +46,158 @@ function downloadCsv(data, label) {
   URL.revokeObjectURL(url);
 }
 
+const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+  {
+    label: 'Nutrition', icon: '🍽️',
+    items: [
+      { id: 'meals', label: 'Meals', icon: '🥗', desc: 'Browse & compare meals' },
+      { id: 'food', label: 'Food Patterns', icon: '🍎', desc: 'Track food impact' },
+      { id: 'events', label: 'Events', icon: '📋', desc: 'All meal & activity events' },
+    ],
+  },
+  {
+    label: 'Insights', icon: '🧠',
+    items: [
+      { id: 'chat', label: 'AI Chat', icon: '💬', desc: 'Ask AI about your data' },
+      { id: 'dailysummaries', label: 'Daily Summaries', icon: '📅', desc: 'Day-by-day analysis' },
+      { id: 'periodsummary', label: 'Period Summaries', icon: '📈', desc: 'Custom period analysis' },
+      { id: 'compare', label: 'Compare Periods', icon: '⚖️', desc: 'Side-by-side comparison' },
+    ],
+  },
+  {
+    label: 'Tools', icon: '🔧',
+    items: [
+      { id: 'reports', label: 'PDF Reports', icon: '📄', desc: 'Reports for your doctor' },
+      { id: 'aiusage', label: 'AI Usage', icon: '🤖', desc: 'GPT costs & tokens' },
+      { id: 'eventlog', label: 'Event Log', icon: '📜', desc: 'System activity log' },
+      { id: 'settings', label: 'Settings', icon: '⚙️', desc: 'Configuration' },
+    ],
+  },
+];
+
+function Nav({ page, setPage }) {
+  const [openGroup, setOpenGroup] = useState(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const navRef = useRef(null);
+
+  const activeGroup = NAV_ITEMS.find(
+    g => g.items?.some(i => i.id === page)
+  );
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (navRef.current && !navRef.current.contains(e.target)) {
+        setOpenGroup(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const handleNav = (id) => {
+    setPage(id);
+    setOpenGroup(null);
+    setMobileOpen(false);
+  };
+
+  const toggleGroup = (label) => {
+    setOpenGroup(openGroup === label ? null : label);
+  };
+
+  const isGroupActive = (group) => group.items?.some(i => i.id === page);
+
+  const activePage = NAV_ITEMS.flatMap(g => g.items ? g.items : [g]).find(i => i.id === page);
+
+  return (
+    <nav className="nav" ref={navRef}>
+      <div className="nav-bar">
+        {NAV_ITEMS.map(item =>
+          item.items ? (
+            <div key={item.label} className={`nav-group${isGroupActive(item) ? ' nav-group-active' : ''}`}>
+              <button
+                className={`nav-group-btn${openGroup === item.label ? ' open' : ''}${isGroupActive(item) ? ' active' : ''}`}
+                onClick={() => toggleGroup(item.label)}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-label">{item.label}</span>
+                <span className="nav-chevron">{openGroup === item.label ? '▴' : '▾'}</span>
+              </button>
+              {openGroup === item.label && (
+                <div className="nav-dropdown">
+                  {item.items.map(sub => (
+                    <button
+                      key={sub.id}
+                      className={`nav-dropdown-item${page === sub.id ? ' active' : ''}`}
+                      onClick={() => handleNav(sub.id)}
+                    >
+                      <span className="nav-dropdown-icon">{sub.icon}</span>
+                      <div className="nav-dropdown-text">
+                        <span className="nav-dropdown-label">{sub.label}</span>
+                        <span className="nav-dropdown-desc">{sub.desc}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              key={item.id}
+              className={`nav-item${page === item.id ? ' active' : ''}`}
+              onClick={() => handleNav(item.id)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
+            </button>
+          )
+        )}
+      </div>
+
+      {/* Mobile nav */}
+      <button className="nav-mobile-toggle" onClick={() => setMobileOpen(!mobileOpen)}>
+        <span className="nav-mobile-current">
+          {activePage?.icon || '📊'} {activePage?.label || 'Dashboard'}
+        </span>
+        <span className="nav-mobile-arrow">{mobileOpen ? '▴' : '▾'}</span>
+      </button>
+
+      {mobileOpen && (
+        <div className="nav-mobile-menu">
+          {NAV_ITEMS.map(item =>
+            item.items ? (
+              <div key={item.label} className="nav-mobile-group">
+                <div className="nav-mobile-group-label">
+                  <span className="nav-icon">{item.icon}</span> {item.label}
+                </div>
+                {item.items.map(sub => (
+                  <button
+                    key={sub.id}
+                    className={`nav-mobile-item${page === sub.id ? ' active' : ''}`}
+                    onClick={() => handleNav(sub.id)}
+                  >
+                    <span className="nav-icon">{sub.icon}</span>
+                    <span>{sub.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <button
+                key={item.id}
+                className={`nav-mobile-item${page === item.id ? ' active' : ''}`}
+                onClick={() => handleNav(item.id)}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </nav>
+  );
+}
+
 function App() {
   const [page, setPage] = useState('dashboard');
   const [history, setHistory] = useState([]);
@@ -326,81 +478,7 @@ function App() {
             </span>
           )}
         </div>
-        <p>Continuous Glucose Monitoring Dashboard</p>
-        <nav className="nav-tabs">
-          <button
-            className={page === 'dashboard' ? 'active' : ''}
-            onClick={() => setPage('dashboard')}
-          >
-            Dashboard
-          </button>
-          <button
-            className={page === 'events' ? 'active' : ''}
-            onClick={() => setPage('events')}
-          >
-            Events
-          </button>
-          <button
-            className={page === 'dailysummaries' ? 'active' : ''}
-            onClick={() => setPage('dailysummaries')}
-          >
-            Daily
-          </button>
-          <button
-            className={page === 'periodsummary' ? 'active' : ''}
-            onClick={() => setPage('periodsummary')}
-          >
-            Summaries
-          </button>
-          <button
-            className={page === 'compare' ? 'active' : ''}
-            onClick={() => setPage('compare')}
-          >
-            Compare
-          </button>
-          <button
-            className={page === 'chat' ? 'active' : ''}
-            onClick={() => setPage('chat')}
-          >
-            Chat
-          </button>
-          <button
-            className={page === 'food' ? 'active' : ''}
-            onClick={() => setPage('food')}
-          >
-            Food
-          </button>
-          <button
-            className={page === 'meals' ? 'active' : ''}
-            onClick={() => setPage('meals')}
-          >
-            Meals
-          </button>
-          <button
-            className={page === 'aiusage' ? 'active' : ''}
-            onClick={() => setPage('aiusage')}
-          >
-            AI Usage
-          </button>
-          <button
-            className={page === 'reports' ? 'active' : ''}
-            onClick={() => setPage('reports')}
-          >
-            Reports
-          </button>
-          <button
-            className={page === 'eventlog' ? 'active' : ''}
-            onClick={() => setPage('eventlog')}
-          >
-            Event Log
-          </button>
-          <button
-            className={page === 'settings' ? 'active' : ''}
-            onClick={() => setPage('settings')}
-          >
-            Settings
-          </button>
-        </nav>
+        <Nav page={page} setPage={setPage} />
       </header>
 
       {page === 'periodsummary' && <PeriodSummaryPage />}
