@@ -135,9 +135,19 @@ function EventsPage() {
               </div>
 
               <div className="event-card-center">
-                <h3 className="event-title">{evt.noteTitle || 'Untitled'}</h3>
+                <h3 className="event-title">
+                  {evt.noteTitle || 'Untitled'}
+                  {evt.noteTitleEn && evt.noteTitleEn !== evt.noteTitle && (
+                    <span className="event-title-en"> ({evt.noteTitleEn})</span>
+                  )}
+                </h3>
                 {evt.noteContentPreview && (
-                  <p className="event-content-preview">{evt.noteContentPreview}</p>
+                  <p className="event-content-preview">
+                    {evt.noteContentPreview}
+                    {evt.noteContentPreviewEn && evt.noteContentPreviewEn !== evt.noteContentPreview && (
+                      <span className="event-content-en"><br/>{evt.noteContentPreviewEn}</span>
+                    )}
+                  </p>
                 )}
                 <div className="event-tags">
                   {evt.aiClassification && (

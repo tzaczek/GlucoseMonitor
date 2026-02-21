@@ -101,6 +101,30 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **Session management**: All conversations are saved persistently. Browse, resume, or permanently delete individual sessions or all sessions at once.
 - **Background processing**: Chat messages are processed asynchronously. The queue-based architecture handles multiple simultaneous conversations and recovers from crashes.
 
+### 🍽️ Food Pattern Recognition
+- **AI-powered food extraction**: When meal events are processed, AI (GPT-4o-mini) automatically extracts individual food and drink names from your note text — handling Polish and English.
+- **Personal food database**: Each unique food builds a profile over time, tracking how many times you've eaten it, average glucose spike, best/worst spike, classification breakdown (good/concerning/problematic), and date range.
+- **Food detail with full event history**: Click any food to see every event where you ate it — with full note content, glucose metrics (min/avg/max, spike, recovery time, reading count), and the original AI analysis for each event.
+- **AI food analysis chat**: Click "Analyze with AI" on any food to start a chat session pre-loaded with all the food's data — aggregate stats and every individual event's glucose readings. Ask the AI about patterns, best/worst timing, whether to keep eating that food, or what alternatives to try.
+- **Quick analysis prompts**: Pre-built prompt buttons for common questions — "Best timing?", "Best vs worst", "Should I eat this?", "Alternatives?" — each starting a focused AI conversation.
+- **Search and sort**: Find foods by name (in Polish or English), sort by occurrence count, average spike, or last seen date.
+- **Food management**: Rename foods, merge duplicates, or delete food items and their links.
+- **Real-time updates**: When new events are analyzed, food patterns are automatically updated and pushed to the UI via SignalR.
+
+### 🌐 Bilingual Support (Polish & English)
+- **Automatic translation**: All meal/activity note titles and content are automatically translated to English using AI (GPT-4o-mini) when events are created.
+- **Food name translation**: Food items are extracted and stored in both the original language (Polish) and English (e.g., "ser" → "cheese", "soczewica" → "lentils").
+- **Side-by-side display**: The UI shows both Polish and English text throughout — event titles, note content, food names — so you can work in either language.
+- **Searchable in both languages**: Search for foods by their Polish or English name.
+- **Backfill on startup**: A background service automatically translates any existing events and food items that don't have English translations yet, processing in batches.
+- **Manual backfill**: Trigger translation of all untranslated data via API endpoint.
+
+### 🛡️ API Resilience
+- **Retry policies**: Transient failures on external API calls (OpenAI GPT, LibreLink Up) are automatically retried with exponential backoff.
+- **Circuit breakers**: If an API is consistently failing, the circuit breaker opens to prevent wasting resources, automatically recovering when the service is healthy again.
+- **Timeouts**: All external API calls have configurable timeouts to prevent hanging requests from blocking background services.
+- **Polly integration**: Built on Microsoft.Extensions.Http.Resilience (Polly) for production-grade resilience patterns.
+
 ### 📊 Period Comparison
 - **Compare any two time periods**: Select two glucose monitoring periods — hours, days, weeks, or custom date ranges — and see how your glucose control differed.
 - **Quick presets**: One-click comparisons for common scenarios: last 6h/12h/24h/48h/7d/14d/30d vs the previous equivalent period.
@@ -224,6 +248,8 @@ FreeStyle Libre Sensor
    │  │   ComparisonService       │──── Period comparison analysis (AI)
    │  │   PeriodSummaryService   │──── Arbitrary period summaries (AI)
    │  │   ChatService             │──── Interactive AI chat with multi-period context
+   │  │   FoodPatternService      │──── AI food extraction + pattern tracking
+   │  │   TranslationService      │──── Bilingual PL↔EN translation
    │  │   DatabaseBackupService   │──── Daily SQL Server .bak backup/restore
    │  └───────────────────────────┘  │
    │            │                    │

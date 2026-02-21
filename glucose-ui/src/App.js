@@ -13,6 +13,7 @@ import ComparePage from './components/ComparePage';
 import PeriodSummaryPage from './components/PeriodSummaryPage';
 import EventLogPage from './components/EventLogPage';
 import ChatPage from './components/ChatPage';
+import FoodPatternsPage from './components/FoodPatternsPage';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
@@ -190,6 +191,11 @@ function App() {
       window.dispatchEvent(new CustomEvent('chatSessionsUpdated'));
     });
 
+    connection.on('FoodPatternsUpdated', (count) => {
+      console.log(`[SignalR] ${count} food pattern(s) updated.`);
+      window.dispatchEvent(new CustomEvent('foodPatternsUpdated'));
+    });
+
     connection.on('ChatPeriodResolved', (data) => {
       console.log(`[SignalR] Chat period resolved:`, data);
       window.dispatchEvent(new CustomEvent('chatPeriodResolved', { detail: data }));
@@ -358,6 +364,12 @@ function App() {
             Chat
           </button>
           <button
+            className={page === 'food' ? 'active' : ''}
+            onClick={() => setPage('food')}
+          >
+            Food
+          </button>
+          <button
             className={page === 'aiusage' ? 'active' : ''}
             onClick={() => setPage('aiusage')}
           >
@@ -387,6 +399,7 @@ function App() {
       {page === 'periodsummary' && <PeriodSummaryPage />}
       {page === 'compare' && <ComparePage />}
       {page === 'chat' && <ChatPage />}
+      {page === 'food' && <FoodPatternsPage />}
       {page === 'events' && <EventsPage />}
       {page === 'dailysummaries' && <DailySummariesPage />}
       {page === 'eventlog' && <EventLogPage onNavigate={setPage} />}

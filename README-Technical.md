@@ -60,6 +60,7 @@ GlucoseAPI/
 │       ├── Glucose/                    # GetLatestReading, GetHistory, GetStats, GetDates, GetRange
 │       ├── Events/                     # GetEvents, GetEventDetail, GetStatus, Reprocess
 │       ├── Chat/                       # CreateSession, SendMessage, DeleteSession, DeleteAll, Templates
+│       ├── Food/                       # GetFoodItems, GetFoodDetail, GetFoodStats, Scan, Delete, Merge, Rename
 │       ├── Comparisons/               # CreateComparison, GetComparisons, GetDetail, Delete
 │       ├── PeriodSummaries/           # CreatePeriodSummary, GetPeriodSummaries, GetDetail, Delete
 │       ├── EventLogs/                 # GetEventLogs (filtered + paginated)
@@ -83,6 +84,7 @@ GlucoseAPI/
 │   ├── GlucoseController.cs      # /api/glucose/* — readings, stats, history, range
 │   ├── EventsController.cs       # /api/events/* — meal/activity events
 │   ├── ChatController.cs         # /api/chat/* — AI chat sessions, messages, templates
+│   ├── FoodController.cs         # /api/food/* — food patterns, stats, scan, merge
 │   ├── ComparisonController.cs  # /api/comparison/* — period comparisons
 │   ├── PeriodSummaryController.cs # /api/periodsummary/* — arbitrary period summaries
 │   ├── DailySummariesController.cs # /api/dailysummaries/* — daily summaries
@@ -105,6 +107,7 @@ GlucoseAPI/
 │   ├── GlucoseComparison.cs     # Period comparison entity + DTOs
 │   ├── PeriodSummary.cs         # Arbitrary period summary entity + DTOs
 │   ├── ChatModels.cs            # Chat session, message, template, period entities + DTOs
+│   ├── FoodModels.cs            # Food item, event links, bilingual DTOs
 │   ├── EventLog.cs              # Application event log entity + DTOs
 │   ├── DailySummary.cs           # Daily aggregation entity
 │   ├── DailySummarySnapshot.cs   # Immutable snapshot per generation run
@@ -123,6 +126,8 @@ GlucoseAPI/
     ├── ComparisonService.cs      # Background: processes period comparisons with AI
     ├── PeriodSummaryService.cs  # Background: processes arbitrary period summaries with AI
     ├── ChatService.cs           # Background: processes AI chat sessions with multi-period context
+    ├── FoodPatternService.cs    # Background: AI food extraction + aggregate stats
+    ├── TranslationService.cs    # Background: bilingual PL↔EN translation
     ├── DatabaseBackupService.cs  # Daily SQL Server .bak backup + manual trigger/restore
     ├── ReportService.cs          # Generates PDF reports using QuestPDF + SkiaSharp
     ├── LibreLinkClient.cs        # Unofficial LibreLink Up HTTP client
@@ -166,7 +171,9 @@ Program.cs registers:
 
   Named HttpClients (IHttpClientFactory):
     - "OpenAI"    — BaseAddress: https://api.openai.com/, Accept: application/json
+                     + Polly resilience: 2 retries (3s backoff), circuit breaker (90% threshold, 60s break), 110s timeout
     - "LibreLink" — Custom headers + handler (cookies, gzip/deflate/brotli)
+                     + Polly resilience: 3 retries (2s backoff), circuit breaker (80% threshold, 30s break), 25s timeout
 
   Application Services (Scoped):
     - GlucoseDbContext (EF Core → SQL Server)
@@ -195,6 +202,10 @@ Program.cs registers:
        pushes responses via SignalR, supports per-message model selection)
     - DatabaseBackupService      — daily SQL Server .bak backup (retained 7 days)
       (TriggerBackupAsync / RestoreFromBackupAsync for manual backup/restore via Settings)
+    - FoodPatternService         — AI food extraction + pattern aggregation
+      (RequestFullScan / EnqueueEventProcessing for manual/automatic triggers)
+    - TranslationService         — automatic PL→EN translation backfill
+      (RequestBackfill for manual trigger, auto-runs on startup)
 
   Hosted Services (BackgroundService only):
     - GlucoseEventAnalysisService — correlates + analyzes every N minutes
@@ -231,6 +242,7 @@ The database is created via `EnsureCreated()` at startup, with additional `ALTER
 │ Id (PK)                                      │
 │ SamsungNoteId, NoteUuid (unique), NoteTitle   │
 │ NoteContent                                  │
+│ NoteTitleEn, NoteContentEn (English translations) │
 │ EventTimestamp (UTC)                          │
 │ PeriodStart, PeriodEnd (UTC)                 │
 │ ReadingCount, GlucoseAtEvent                 │
@@ -386,6 +398,35 @@ ChatPeriod (serialized in PeriodsJson):
 └──────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────┐
+│              FoodItems                        │
+│──────────────────────────────────────────────│
+│ Id (PK)                                      │
+│ Name (original language), NameEn (English)   │
+│ NormalizedName (lowercase, for dedup)        │
+│ Category (nullable)                          │
+│ OccurrenceCount, AvgSpike, WorstSpike,       │
+│   BestSpike, AvgGlucoseAtEvent, AvgGlucoseMax│
+│   AvgGlucoseMin, AvgRecoveryMinutes         │
+│ GreenCount, YellowCount, RedCount            │
+│ FirstSeen, LastSeen                          │
+│ CreatedAt, UpdatedAt                         │
+└──────────────────┬───────────────────────────┘
+                   │
+                   │ (1:N via FoodEventLinks)
+                   ▼
+┌──────────────────────────────────────────────┐
+│           FoodEventLinks                     │
+│──────────────────────────────────────────────│
+│ Id (PK)                                      │
+│ FoodItemId (FK → FoodItems)                  │
+│ GlucoseEventId (FK → GlucoseEvents)         │
+│ Spike, GlucoseAtEvent                       │
+│ AiClassification, RecoveryMinutes            │
+│ CreatedAt                                    │
+│ UNIQUE(FoodItemId, GlucoseEventId)          │
+└──────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────┐
 │            AppSettings                        │
 │──────────────────────────────────────────────│
 │ Id (PK)                                      │
@@ -407,6 +448,8 @@ ChatPeriod (serialized in PeriodsJson):
 - `ChatPromptTemplates`: Name (unique)
 - `DailySummaries`: Date (unique), IsProcessed
 - `DailySummarySnapshots`: DailySummaryId, Date, GeneratedAt
+- `FoodItems`: NormalizedName, OccurrenceCount
+- `FoodEventLinks`: FoodItemId, GlucoseEventId, (FoodItemId + GlucoseEventId unique composite)
 
 ### Background Services Architecture
 
@@ -614,6 +657,46 @@ Manual restore (POST /api/settings/backup/restore):
   6. On failure: best-effort recovery to MULTI_USER mode
 ```
 
+#### 10. FoodPatternService (on-demand + event-driven)
+```
+Startup delay: 90 seconds
+On startup: processes unprocessed events
+Event-driven:
+  1. Wait for signal (SemaphoreSlim)
+  2. For each processed GlucoseEvent not yet linked:
+     a. Send note title + content to GPT-4o-mini
+     b. AI extracts food names as JSON array with both original and English names
+        e.g., [{"name":"kawa z mlekiem","nameEn":"coffee with milk"}]
+     c. Create/find FoodItem for each food (dedup by normalized name)
+     d. Create FoodEventLink with spike, glucose, classification, recovery
+  3. Recalculate all FoodItem aggregates (avg spike, best/worst, counts)
+  4. SignalR → "FoodPatternsUpdated"
+
+Full scan (POST /api/food/scan):
+  - Processes ALL events, skipping those already linked
+  - Used for initial population or re-extraction
+
+Triggered by:
+  - GlucoseEventAnalysisService (after each event's AI analysis completes)
+  - Manual scan via FoodController
+```
+
+#### 11. TranslationService (on-demand + startup backfill)
+```
+Startup delay: 60 seconds
+On startup: auto-triggers backfill
+Backfill:
+  1. Find GlucoseEvents where NoteTitleEn IS NULL (batch of 50)
+  2. For each event: send title + content to GPT-4o-mini
+     → Returns JSON: {"titleEn":"Lunch","contentEn":"Fish burger and coffee"}
+  3. Save translations, continue with next batch
+  4. Find FoodItems where NameEn IS NULL (batch of 100)
+  5. For each food: send name to GPT-4o-mini → returns English name
+  6. Save translations
+
+Manual trigger: POST /api/events/backfill-translations
+```
+
 ### API Endpoints
 
 | Method | Endpoint | Description |
@@ -627,6 +710,14 @@ Manual restore (POST /api/settings/backup/restore):
 | GET | `/api/events/{id}` | Event detail + readings + analysis history |
 | GET | `/api/events/status` | Processing status (total/processed/pending) |
 | POST | `/api/events/{id}/reprocess` | Trigger immediate AI re-analysis |
+| POST | `/api/events/backfill-translations` | Trigger PL→EN translation for all untranslated data |
+| GET | `/api/food` | List food items (search, sort, paginated) |
+| GET | `/api/food/{id}` | Food item detail with all linked events |
+| GET | `/api/food/stats` | Food pattern statistics (totals, most problematic, safest) |
+| POST | `/api/food/scan` | Trigger full food pattern scan |
+| DELETE | `/api/food/{id}` | Delete a food item and all its links |
+| PUT | `/api/food/{id}/rename` | Rename a food item |
+| POST | `/api/food/merge` | Merge multiple food items into one |
 | GET | `/api/comparison` | List all period comparisons |
 | GET | `/api/comparison/{id}` | Comparison detail + readings + events + AI |
 | POST | `/api/comparison` | Create new comparison (queued for background processing) |
@@ -686,6 +777,7 @@ Manual restore (POST /api/settings/backup/restore):
 | `EventLogsUpdated` | count (int) | EventLogger after writing any application event log entry |
 | `ChatMessageReceived` | { sessionId, message } | ChatService after AI generates a response |
 | `ChatPeriodResolved` | { sessionId, periodStart, periodEnd } | ChatService after resolving natural language period description |
+| `FoodPatternsUpdated` | count (int) | FoodPatternService after extracting/updating food patterns |
 | `AiUsageUpdated` | count (int) | EventAnalyzer, DailySummaryService, ComparisonService, PeriodSummaryService, ChatService after API calls |
 
 ### AI Integration (OpenAI GPT)
@@ -760,6 +852,7 @@ glucose-ui/
         ├── ComparePage.js         # Period comparison (form, chart overlay, AI analysis)
         ├── PeriodSummaryPage.js   # Arbitrary period summaries (presets, custom, chart, AI analysis)
         ├── ChatPage.js            # AI Chat with graph-based multi-period selection + zoom
+        ├── FoodPatternsPage.js    # Food patterns with detail view + AI chat integration
         ├── EventLogPage.js        # Application event log with filtering, pagination, real-time updates
         ├── NotesPage.js           # Samsung Notes browser
         ├── AiUsagePage.js         # AI usage dashboard (charts, logs, costs)
@@ -811,6 +904,8 @@ App.js SignalR listener
     │       └──▶ ChatPage listens → appends AI response to active thread
     ├──▶ ChatPeriodResolved → window.dispatchEvent('chatPeriodResolved')
     │       └──▶ ChatPage listens → updates period start/end from AI extraction
+    ├──▶ FoodPatternsUpdated → window.dispatchEvent('foodPatternsUpdated')
+    │       └──▶ FoodPatternsPage listens → reloads food list + stats
     └──▶ AiUsageUpdated → setAiUsageVersion(v => v + 1)
             └──▶ AiUsagePage key={version} → remount → fresh fetch
 ```
@@ -881,6 +976,7 @@ These are necessary for QuestPDF/SkiaSharp to generate PDF reports with proper f
 - `QuestPDF` 2024.12.2 (PDF report generation)
 - `SkiaSharp` 2.88.9 (2D graphics for glucose trend chart rendering)
 - `MediatR` 12.4.1 (CQRS mediator pattern — all controller logic routed through handlers)
+- `Microsoft.Extensions.Http.Resilience` 10.3.0 (Polly — retry, circuit breaker, timeout for HTTP clients)
 
 ### Testing (NuGet — GlucoseAPI.Tests)
 - `xunit` 2.5.3 (test framework)

@@ -7,6 +7,8 @@ using GlucoseAPI.Infrastructure.Logging;
 using GlucoseAPI.Infrastructure.Notifications;
 using GlucoseAPI.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 using QuestPDF.Infrastructure;
 
 // QuestPDF Community License (free for revenue < $1M)
@@ -28,6 +30,30 @@ builder.Services.AddHttpClient(LibreLinkClient.HttpClientName, client =>
     AutomaticDecompression = System.Net.DecompressionMethods.GZip
                            | System.Net.DecompressionMethods.Deflate
                            | System.Net.DecompressionMethods.Brotli,
+})
+.AddResilienceHandler("LibreLink-resilience", builder =>
+{
+    builder.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 3,
+        Delay = TimeSpan.FromSeconds(2),
+        BackoffType = DelayBackoffType.Exponential,
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Result?.StatusCode is
+                System.Net.HttpStatusCode.RequestTimeout or
+                System.Net.HttpStatusCode.TooManyRequests or
+                System.Net.HttpStatusCode.ServiceUnavailable or
+                System.Net.HttpStatusCode.GatewayTimeout
+            || args.Outcome.Exception is HttpRequestException or TaskCanceledException)
+    });
+    builder.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        SamplingDuration = TimeSpan.FromSeconds(60),
+        FailureRatio = 0.8,
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+    builder.AddTimeout(TimeSpan.FromSeconds(25));
 });
 
 builder.Services.AddHttpClient("OpenAI", client =>
@@ -35,6 +61,30 @@ builder.Services.AddHttpClient("OpenAI", client =>
     client.BaseAddress = new Uri("https://api.openai.com/");
     client.Timeout = TimeSpan.FromSeconds(120);
     client.DefaultRequestHeaders.Add("User-Agent", "GlucoseAPI/1.0");
+})
+.AddResilienceHandler("OpenAI-resilience", builder =>
+{
+    builder.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.FromSeconds(3),
+        BackoffType = DelayBackoffType.Exponential,
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Result?.StatusCode is
+                System.Net.HttpStatusCode.TooManyRequests or
+                System.Net.HttpStatusCode.ServiceUnavailable or
+                System.Net.HttpStatusCode.GatewayTimeout or
+                System.Net.HttpStatusCode.InternalServerError
+            || args.Outcome.Exception is HttpRequestException or TaskCanceledException)
+    });
+    builder.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        SamplingDuration = TimeSpan.FromSeconds(120),
+        FailureRatio = 0.9,
+        MinimumThroughput = 3,
+        BreakDuration = TimeSpan.FromSeconds(60)
+    });
+    builder.AddTimeout(TimeSpan.FromSeconds(110));
 });
 
 // ── Domain Services ────────────────────────────────────
@@ -70,6 +120,10 @@ builder.Services.AddSingleton<PeriodSummaryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PeriodSummaryService>());
 builder.Services.AddSingleton<ChatService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChatService>());
+builder.Services.AddSingleton<FoodPatternService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<FoodPatternService>());
+builder.Services.AddSingleton<TranslationService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TranslationService>());
 
 // ── MediatR (CQRS) ──────────────────────────────────────
 builder.Services.AddMediatR(cfg =>
@@ -632,6 +686,87 @@ using (var scope = app.Services.CreateScope())
             catch (Exception tableEx)
             {
                 logger.LogWarning("Could not verify Chat tables: {Message}", tableEx.Message);
+            }
+
+            // Create FoodItems and FoodEventLinks tables if they don't exist
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'FoodItems') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE FoodItems (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Name NVARCHAR(200) NOT NULL DEFAULT '',
+                            NormalizedName NVARCHAR(200) NOT NULL DEFAULT '',
+                            Category NVARCHAR(50) NULL,
+                            OccurrenceCount INT NOT NULL DEFAULT 0,
+                            AvgSpike FLOAT NULL,
+                            AvgGlucoseAtEvent FLOAT NULL,
+                            AvgGlucoseMax FLOAT NULL,
+                            AvgGlucoseMin FLOAT NULL,
+                            AvgRecoveryMinutes FLOAT NULL,
+                            WorstSpike FLOAT NULL,
+                            BestSpike FLOAT NULL,
+                            GreenCount INT NOT NULL DEFAULT 0,
+                            YellowCount INT NOT NULL DEFAULT 0,
+                            RedCount INT NOT NULL DEFAULT 0,
+                            FirstSeen DATETIME2 NOT NULL,
+                            LastSeen DATETIME2 NOT NULL,
+                            CreatedAt DATETIME2 NOT NULL,
+                            UpdatedAt DATETIME2 NOT NULL
+                        );
+                        CREATE INDEX IX_FoodItems_NormalizedName ON FoodItems (NormalizedName);
+                        CREATE INDEX IX_FoodItems_OccurrenceCount ON FoodItems (OccurrenceCount);
+                        PRINT 'Created FoodItems table.';
+                    END
+
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'FoodEventLinks') AND type = 'U')
+                    BEGIN
+                        CREATE TABLE FoodEventLinks (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            FoodItemId INT NOT NULL,
+                            GlucoseEventId INT NOT NULL,
+                            Spike FLOAT NULL,
+                            GlucoseAtEvent FLOAT NULL,
+                            AiClassification NVARCHAR(10) NULL,
+                            RecoveryMinutes FLOAT NULL,
+                            CreatedAt DATETIME2 NOT NULL,
+                            CONSTRAINT FK_FoodEventLinks_FoodItems FOREIGN KEY (FoodItemId) REFERENCES FoodItems(Id) ON DELETE CASCADE,
+                            CONSTRAINT FK_FoodEventLinks_GlucoseEvents FOREIGN KEY (GlucoseEventId) REFERENCES GlucoseEvents(Id) ON DELETE CASCADE
+                        );
+                        CREATE INDEX IX_FoodEventLinks_FoodItemId ON FoodEventLinks (FoodItemId);
+                        CREATE INDEX IX_FoodEventLinks_GlucoseEventId ON FoodEventLinks (GlucoseEventId);
+                        CREATE UNIQUE INDEX IX_FoodEventLinks_FoodItem_Event ON FoodEventLinks (FoodItemId, GlucoseEventId);
+                        PRINT 'Created FoodEventLinks table.';
+                    END");
+                logger.LogInformation("FoodItems/FoodEventLinks table check complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not verify Food tables: {Message}", tableEx.Message);
+            }
+
+            // Add bilingual columns to GlucoseEvents and FoodItems
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GlucoseEvents') AND name = 'NoteTitleEn')
+                    BEGIN
+                        ALTER TABLE GlucoseEvents ADD NoteTitleEn NVARCHAR(500) NULL;
+                        ALTER TABLE GlucoseEvents ADD NoteContentEn NVARCHAR(MAX) NULL;
+                        PRINT 'Added English translation columns to GlucoseEvents.';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('FoodItems') AND name = 'NameEn')
+                    BEGIN
+                        ALTER TABLE FoodItems ADD NameEn NVARCHAR(200) NULL;
+                        PRINT 'Added NameEn column to FoodItems.';
+                    END");
+                logger.LogInformation("Bilingual column migration check complete.");
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning("Could not add bilingual columns: {Message}", tableEx.Message);
             }
 
             // Seed built-in chat prompt templates

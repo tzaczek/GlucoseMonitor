@@ -21,6 +21,8 @@ public class GlucoseDbContext : DbContext
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<ChatPromptTemplate> ChatPromptTemplates => Set<ChatPromptTemplate>();
+    public DbSet<FoodItem> FoodItems => Set<FoodItem>();
+    public DbSet<FoodEventLink> FoodEventLinks => Set<FoodEventLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -113,6 +115,19 @@ public class GlucoseDbContext : DbContext
         modelBuilder.Entity<ChatPromptTemplate>(entity =>
         {
             entity.HasIndex(e => e.Category);
+        });
+
+        modelBuilder.Entity<FoodItem>(entity =>
+        {
+            entity.HasIndex(e => e.NormalizedName);
+            entity.HasIndex(e => e.OccurrenceCount);
+        });
+
+        modelBuilder.Entity<FoodEventLink>(entity =>
+        {
+            entity.HasIndex(e => e.FoodItemId);
+            entity.HasIndex(e => e.GlucoseEventId);
+            entity.HasIndex(e => new { e.FoodItemId, e.GlucoseEventId }).IsUnique();
         });
     }
 }

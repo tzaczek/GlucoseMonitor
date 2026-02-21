@@ -49,4 +49,7 @@ public class SignalRNotificationService : INotificationService
 
     public Task NotifyChatPeriodResolvedAsync(int sessionId, DateTime periodStart, DateTime periodEnd, CancellationToken ct = default)
         => _hubContext.Clients.All.SendAsync("ChatPeriodResolved", new { sessionId, periodStart, periodEnd }, ct);
+
+    public Task NotifyFoodPatternsUpdatedAsync(int count, CancellationToken ct = default)
+        => _hubContext.Clients.All.SendAsync("FoodPatternsUpdated", count, ct);
 }

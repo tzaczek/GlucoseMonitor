@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using GlucoseAPI.Application.Interfaces;
 using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
@@ -22,26 +24,26 @@ public class GlucoseEventAnalysisService : BackgroundService
     private readonly ILogger<GlucoseEventAnalysisService> _logger;
     private readonly INotificationService _notifications;
 
-    // Default lookback/lookahead when there is no adjacent event
     private static readonly TimeSpan DefaultLookback = TimeSpan.FromHours(3);
     private static readonly TimeSpan DefaultLookahead = TimeSpan.FromHours(4);
 
-    // Minimum post-event window: always capture at least 3 hours of glucose data after an event,
-    // even if the next event occurs sooner. This ensures the full post-meal response is visible.
     private static readonly TimeSpan MinimumLookahead = TimeSpan.FromHours(3);
 
     private readonly IEventLogger _eventLogger;
+    private readonly FoodPatternService _foodPatternService;
 
     public GlucoseEventAnalysisService(
         IServiceProvider serviceProvider,
         ILogger<GlucoseEventAnalysisService> logger,
         INotificationService notifications,
-        IEventLogger eventLogger)
+        IEventLogger eventLogger,
+        FoodPatternService foodPatternService)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _notifications = notifications;
         _eventLogger = eventLogger;
+        _foodPatternService = foodPatternService;
     }
 
     /// <summary>
@@ -97,6 +99,7 @@ public class GlucoseEventAnalysisService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<GlucoseDbContext>();
         var settingsService = scope.ServiceProvider.GetRequiredService<SettingsService>();
         var analyzer = scope.ServiceProvider.GetRequiredService<EventAnalyzer>();
+        var gptClient = scope.ServiceProvider.GetRequiredService<IGptClient>();
 
         var analysisSettings = await settingsService.GetAnalysisSettingsAsync();
         var folderName = analysisSettings.NotesFolderName;
@@ -288,6 +291,12 @@ public class GlucoseEventAnalysisService : BackgroundService
                 UpdatedAt = DateTime.UtcNow
             };
 
+            // Translate title + content to English
+            var (titleEn, contentEn) = await TranslateEventAsync(
+                gptClient, analysisSettings.GptApiKey, note.Title, note.TextContent, ct);
+            glucoseEvent.NoteTitleEn = titleEn;
+            glucoseEvent.NoteContentEn = contentEn;
+
             db.GlucoseEvents.Add(glucoseEvent);
             created++;
         }
@@ -319,6 +328,9 @@ public class GlucoseEventAnalysisService : BackgroundService
 
             // Notify UI
             await _notifications.NotifyEventsUpdatedAsync(created + eventsNeedingReanalysis.Count, ct);
+
+            // Trigger food pattern extraction for newly analyzed events
+            _foodPatternService.EnqueueEventProcessing();
         }
     }
 
@@ -343,6 +355,48 @@ public class GlucoseEventAnalysisService : BackgroundService
         evt.GlucoseAvg = stats.Avg;
         evt.GlucoseSpike = stats.Spike;
         evt.PeakTime = stats.PeakTime;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Translation
+    // ────────────────────────────────────────────────────────────
+
+    private async Task<(string? titleEn, string? contentEn)> TranslateEventAsync(
+        IGptClient gptClient, string apiKey, string title, string? content, CancellationToken ct)
+    {
+        try
+        {
+            var textToTranslate = $"Title: {title}";
+            if (!string.IsNullOrWhiteSpace(content))
+                textToTranslate += $"\nContent: {content}";
+
+            var systemPrompt = @"You translate Polish meal/food notes to English. Return JSON with two fields: ""titleEn"" and ""contentEn"".
+Translate naturally — use common English food names. Keep it brief and accurate.
+If the text is already in English, return it as-is.
+Return ONLY the JSON object, nothing else.";
+
+            var result = await gptClient.AnalyzeAsync(apiKey, systemPrompt,
+                textToTranslate, "gpt-4o-mini", 256, ct);
+
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Content))
+                return (null, null);
+
+            var json = result.Content.Trim();
+            json = Regex.Replace(json, @"^```(?:json)?\s*", "");
+            json = Regex.Replace(json, @"\s*```$", "");
+
+            using var doc = JsonDocument.Parse(json.Trim());
+            var root = doc.RootElement;
+            var titleEn = root.TryGetProperty("titleEn", out var t) ? t.GetString() : null;
+            var contentEn = root.TryGetProperty("contentEn", out var c) ? c.GetString() : null;
+
+            return (titleEn, contentEn);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to translate event '{Title}'.", title);
+            return (null, null);
+        }
     }
 
     // ────────────────────────────────────────────────────────────

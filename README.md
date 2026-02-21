@@ -14,6 +14,9 @@ A **self-hosted Continuous Glucose Monitoring (CGM) dashboard** that connects to
 | 🍽️ **Meal & Activity Events** | Automatic correlation of Samsung Notes with glucose readings — see how each meal affects your glucose |
 | 🤖 **AI-Powered Analysis** | GPT analyzes each event (spike severity, recovery, tips) and classifies it as 🟢 Good / 🟡 Concerning / 🔴 Problematic |
 | 💬 **AI Chat** | Interactive chat with AI about your glucose data — select multiple periods on a zoomable graph, name them, compare them, and ask follow-up questions with per-message model selection |
+| 🍽️ **Food Patterns** | AI extracts food names from meal notes, tracks how each food affects your glucose across all events, and lets you chat with AI about any food's impact |
+| 🌐 **Bilingual (PL/EN)** | All meal notes and food names are automatically translated between Polish and English using AI, displayed side by side |
+| 🛡️ **API Resilience** | Retry policies, circuit breakers, and timeouts on all external API calls (OpenAI, LibreLink) via Polly for robust operation |
 | 📅 **Daily Summaries** | Automatic daily aggregation with AI commentary on patterns, trends, and actionable suggestions |
 | 📄 **PDF Reports** | Professional reports for your doctor with glucose trends, statistics, time-in-range, and AI highlights |
 | 📝 **Samsung Notes Browser** | Browse, search, and preview all your Samsung Notes with media support |
@@ -202,13 +205,17 @@ Glucose/
 ├── GlucoseAPI/                 # ASP.NET Core backend
 │   ├── Domain/                 # Pure business logic (no I/O)
 │   ├── Application/            # MediatR CQRS handlers + interfaces
-│   │   └── Features/Chat/      # AI Chat CQRS commands & queries
+│   │   ├── Features/Chat/      # AI Chat CQRS commands & queries
+│   │   └── Features/Food/      # Food pattern CQRS commands & queries
 │   ├── Infrastructure/         # External API adapters (OpenAI, SignalR)
-│   ├── Controllers/            # Thin REST API endpoints
+│   ├── Controllers/            # Thin REST API endpoints (EventsController, FoodController, etc.)
 │   ├── Services/               # Background services + orchestration
-│   │   └── ChatService.cs      # Background queue processor for AI chat
+│   │   ├── ChatService.cs      # Background queue processor for AI chat
+│   │   ├── FoodPatternService.cs  # AI food extraction + aggregate stats
+│   │   └── TranslationService.cs  # Bilingual PL↔EN translation
 │   ├── Models/                 # Entity models + DTOs
-│   │   └── ChatModels.cs       # Chat session, message, template, period entities
+│   │   ├── ChatModels.cs       # Chat session, message, template, period entities
+│   │   └── FoodModels.cs       # Food item, event links, DTOs
 │   └── Data/                   # EF Core DbContext
 │
 ├── GlucoseAPI.Tests/           # Automated test suite
@@ -216,6 +223,7 @@ Glucose/
 └── glucose-ui/                 # React frontend
     └── src/components/
         ├── ChatPage.js         # AI Chat with graph-based period selection
+        ├── FoodPatternsPage.js # Food patterns with AI chat integration
         └── ...                 # Dashboard, Events, Summaries, Reports, Settings
 ```
 

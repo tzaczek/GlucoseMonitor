@@ -324,6 +324,9 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
           <div>
             <h2 className="event-modal-title">
               {loading ? 'Loading...' : event?.noteTitle || 'Untitled Event'}
+              {event?.noteTitleEn && event.noteTitleEn !== event.noteTitle && (
+                <span className="event-modal-title-en"> ({event.noteTitleEn})</span>
+              )}
             </h2>
             {event && (
               <div className="event-modal-meta">
@@ -363,6 +366,9 @@ function EventDetailModal({ eventId, onClose, onReprocess }) {
                 <div className="event-section">
                   <h3 className="event-section-title">📝 Note</h3>
                   <div className="event-note-content">{event.noteContent}</div>
+                  {event.noteContentEn && event.noteContentEn !== event.noteContent && (
+                    <div className="event-note-content event-note-content-en">{event.noteContentEn}</div>
+                  )}
                 </div>
               )}
 

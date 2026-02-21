@@ -45,7 +45,9 @@ public class GetEventDetailHandler : IRequestHandler<GetEventDetailQuery, Glucos
         {
             Id = evt.Id,
             NoteTitle = evt.NoteTitle,
+            NoteTitleEn = evt.NoteTitleEn,
             NoteContent = evt.NoteContent,
+            NoteContentEn = evt.NoteContentEn,
             EventTimestamp = DateTime.SpecifyKind(evt.EventTimestamp, DateTimeKind.Utc),
             PeriodStart = DateTime.SpecifyKind(evt.PeriodStart, DateTimeKind.Utc),
             PeriodEnd = DateTime.SpecifyKind(evt.PeriodEnd, DateTimeKind.Utc),

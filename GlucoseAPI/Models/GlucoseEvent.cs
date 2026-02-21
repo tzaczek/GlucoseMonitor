@@ -21,12 +21,19 @@ public class GlucoseEvent
     [MaxLength(200)]
     public string NoteUuid { get; set; } = string.Empty;
 
-    /// <summary>Snapshot of the note title at processing time.</summary>
+    /// <summary>Snapshot of the note title at processing time (original language).</summary>
     [MaxLength(500)]
     public string NoteTitle { get; set; } = string.Empty;
 
-    /// <summary>Snapshot of the note text content at processing time.</summary>
+    /// <summary>Note title translated to English.</summary>
+    [MaxLength(500)]
+    public string? NoteTitleEn { get; set; }
+
+    /// <summary>Snapshot of the note text content at processing time (original language).</summary>
     public string? NoteContent { get; set; }
+
+    /// <summary>Note content translated to English.</summary>
+    public string? NoteContentEn { get; set; }
 
     /// <summary>When the note was created/modified — the "event" time (UTC).</summary>
     public DateTime EventTimestamp { get; set; }
@@ -204,7 +211,9 @@ public class GlucoseEventSummaryDto
 {
     public int Id { get; set; }
     public string NoteTitle { get; set; } = string.Empty;
+    public string? NoteTitleEn { get; set; }
     public string? NoteContentPreview { get; set; }
+    public string? NoteContentPreviewEn { get; set; }
     public DateTime EventTimestamp { get; set; }
     public int ReadingCount { get; set; }
     public double? GlucoseAtEvent { get; set; }
@@ -223,7 +232,9 @@ public class GlucoseEventDetailDto
 {
     public int Id { get; set; }
     public string NoteTitle { get; set; } = string.Empty;
+    public string? NoteTitleEn { get; set; }
     public string? NoteContent { get; set; }
+    public string? NoteContentEn { get; set; }
     public DateTime EventTimestamp { get; set; }
     public DateTime PeriodStart { get; set; }
     public DateTime PeriodEnd { get; set; }

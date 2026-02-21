@@ -39,4 +39,5 @@ public static class EventCategory
     public const string System = "system";
     public const string Sync = "sync";
     public const string Chat = "chat";
+    public const string Food = "food";
 }

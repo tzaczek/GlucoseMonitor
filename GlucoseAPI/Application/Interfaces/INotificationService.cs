@@ -38,4 +38,7 @@ public interface INotificationService
 
     /// <summary>Notify clients that a chat session's period has been resolved from natural language.</summary>
     Task NotifyChatPeriodResolvedAsync(int sessionId, DateTime periodStart, DateTime periodEnd, CancellationToken ct = default);
+
+    /// <summary>Notify clients that food pattern data has been updated.</summary>
+    Task NotifyFoodPatternsUpdatedAsync(int count, CancellationToken ct = default);
 }

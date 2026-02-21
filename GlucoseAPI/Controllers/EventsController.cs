@@ -1,4 +1,5 @@
 using GlucoseAPI.Application.Features.Events;
+using GlucoseAPI.Services;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,8 +10,13 @@ namespace GlucoseAPI.Controllers;
 public class EventsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly TranslationService _translationService;
 
-    public EventsController(IMediator mediator) => _mediator = mediator;
+    public EventsController(IMediator mediator, TranslationService translationService)
+    {
+        _mediator = mediator;
+        _translationService = translationService;
+    }
 
     [HttpGet]
     public async Task<ActionResult> GetEvents([FromQuery] int? limit = null, CancellationToken ct = default)
@@ -49,6 +55,12 @@ public class EventsController : ControllerBase
         return result.Success
             ? Ok(new { message = result.Message, analysis = result.Analysis })
             : StatusCode(500, new { message = result.Message });
+    }
+    [HttpPost("backfill-translations")]
+    public ActionResult BackfillTranslations()
+    {
+        _translationService.RequestBackfill();
+        return Ok(new { message = "Translation backfill started in background." });
     }
 }
 

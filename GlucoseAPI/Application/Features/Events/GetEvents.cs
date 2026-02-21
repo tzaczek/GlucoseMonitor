@@ -39,9 +39,13 @@ public class GetEventsHandler : IRequestHandler<GetEventsQuery, List<GlucoseEven
     {
         Id = e.Id,
         NoteTitle = e.NoteTitle,
+        NoteTitleEn = e.NoteTitleEn,
         NoteContentPreview = e.NoteContent != null && e.NoteContent.Length > 120
             ? e.NoteContent[..120] + "…"
             : e.NoteContent,
+        NoteContentPreviewEn = e.NoteContentEn != null && e.NoteContentEn.Length > 120
+            ? e.NoteContentEn[..120] + "…"
+            : e.NoteContentEn,
         EventTimestamp = DateTime.SpecifyKind(e.EventTimestamp, DateTimeKind.Utc),
         ReadingCount = e.ReadingCount,
         GlucoseAtEvent = e.GlucoseAtEvent,
