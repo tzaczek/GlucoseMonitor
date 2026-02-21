@@ -7914,3 +7914,42 @@ body::before {
   border-color: rgba(99,102,241,0.35);
   color: #c7d2fe;
 }
+
+/* ── Infinite Scroll / Loading More ─────────────────────────── */
+
+.scroll-sentinel {
+  height: 4px;
+  width: 100%;
+  pointer-events: none;
+}
+
+.loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.loading-more-sm {
+  padding: 8px;
+}
+
+.spinner-sm {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-default);
+  border-top: 2px solid var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.list-end-message {
+  text-align: center;
+  padding: 16px;
+  color: #64748b;
+  font-size: 0.8rem;
+  border-top: 1px solid var(--border-default);
+}

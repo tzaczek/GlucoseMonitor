@@ -6,8 +6,11 @@ import {
 } from 'recharts';
 import MODEL_OPTIONS from './modelOptions';
 import EventDetailModal from './EventDetailModal';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+import PAGE_SIZES from '../config/pageSize';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const SESSIONS_PAGE_SIZE = PAGE_SIZES.chatSessions;
 
 const PERIOD_COLORS = [
   '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6',
@@ -54,10 +57,14 @@ function ChatPage() {
   const [detail, setDetail] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
+  const [sessionsTotalCount, setSessionsTotalCount] = useState(0);
   const [sending, setSending] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState(null);
   const messagesEndRef = useRef(null);
+  const sessionsOffsetRef = useRef(0);
+  const sessionsListRef = useRef(null);
 
   // New chat form state
   const [newTitle, setNewTitle] = useState('');
@@ -76,16 +83,32 @@ function ChatPage() {
   const [chartData, setChartData] = useState(null);
   const [chartLoading, setChartLoading] = useState(false);
 
-  const fetchSessions = useCallback(async () => {
+  const fetchSessions = useCallback(async (append = false) => {
+    if (append) setLoadingMoreSessions(true); else setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/chat/sessions`);
-      if (res.ok) setSessions(await res.json());
+      const offset = append ? sessionsOffsetRef.current : 0;
+      const res = await fetch(`${API_BASE}/chat/sessions?limit=${SESSIONS_PAGE_SIZE}&offset=${offset}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (append) {
+          setSessions(prev => [...prev, ...data.items]);
+        } else {
+          setSessions(data.items);
+        }
+        setSessionsTotalCount(data.totalCount);
+        sessionsOffsetRef.current = (append ? sessionsOffsetRef.current : 0) + data.items.length;
+      }
     } catch (err) {
       console.error('Failed to fetch chat sessions:', err);
     } finally {
       setLoading(false);
+      setLoadingMoreSessions(false);
     }
   }, []);
+
+  const sessionsHasMore = sessions.length < sessionsTotalCount;
+  const loadMoreSessions = useCallback(() => fetchSessions(true), [fetchSessions]);
+  useInfiniteScroll(loadMoreSessions, { hasMore: sessionsHasMore, loading: loadingMoreSessions }, sessionsListRef.current);
 
   const fetchDetail = useCallback(async (id) => {
     if (!id) { setDetail(null); return; }
@@ -357,7 +380,7 @@ function ChatPage() {
             Delete All Chats
           </button>
         )}
-        <div className="chat-session-list">
+        <div className="chat-session-list" ref={sessionsListRef}>
           {sessions.map(s => (
             <div key={s.id}
               className={`chat-session-item${selectedId === s.id ? ' active' : ''}`}
@@ -374,6 +397,12 @@ function ChatPage() {
               >&times;</button>
             </div>
           ))}
+          <div className="scroll-sentinel" />
+          {loadingMoreSessions && (
+            <div className="loading-more loading-more-sm">
+              <div className="spinner spinner-sm" />
+            </div>
+          )}
           {sessions.length === 0 && <div className="chat-empty-sidebar">No conversations yet</div>}
         </div>
       </div>

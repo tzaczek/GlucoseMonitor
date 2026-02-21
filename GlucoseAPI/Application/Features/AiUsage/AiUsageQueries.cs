@@ -1,3 +1,4 @@
+using GlucoseAPI.Application.Common;
 using GlucoseAPI.Data;
 using GlucoseAPI.Domain.Services;
 using MediatR;
@@ -7,8 +8,8 @@ namespace GlucoseAPI.Application.Features.AiUsage;
 
 // ── GetAiUsageLogs ────────────────────────────────────────────
 
-public record GetAiUsageLogsQuery(int? Limit, DateTime? From, DateTime? To)
-    : IRequest<List<AiUsageLogDto>>;
+public record GetAiUsageLogsQuery(int? Limit, DateTime? From, DateTime? To, int Offset = 0)
+    : IRequest<PagedResult<AiUsageLogDto>>;
 
 public record AiUsageLogDto(
     int Id, int? GlucoseEventId, string Model,
@@ -16,13 +17,13 @@ public record AiUsageLogDto(
     string? Reason, bool Success, int? HttpStatusCode,
     string? FinishReason, DateTime CalledAt, int? DurationMs);
 
-public class GetAiUsageLogsHandler : IRequestHandler<GetAiUsageLogsQuery, List<AiUsageLogDto>>
+public class GetAiUsageLogsHandler : IRequestHandler<GetAiUsageLogsQuery, PagedResult<AiUsageLogDto>>
 {
     private readonly GlucoseDbContext _db;
 
     public GetAiUsageLogsHandler(GlucoseDbContext db) => _db = db;
 
-    public async Task<List<AiUsageLogDto>> Handle(GetAiUsageLogsQuery request, CancellationToken ct)
+    public async Task<PagedResult<AiUsageLogDto>> Handle(GetAiUsageLogsQuery request, CancellationToken ct)
     {
         var query = _db.AiUsageLogs.AsQueryable();
 
@@ -33,18 +34,23 @@ public class GetAiUsageLogsHandler : IRequestHandler<GetAiUsageLogsQuery, List<A
 
         query = query.OrderByDescending(l => l.CalledAt);
 
+        var totalCount = await query.CountAsync(ct);
+
+        query = query.Skip(request.Offset);
+
         if (request.Limit is > 0)
             query = query.Take(request.Limit.Value);
 
         var logs = await query.ToListAsync(ct);
 
-        return logs.Select(l => new AiUsageLogDto(
+        var items = logs.Select(l => new AiUsageLogDto(
             l.Id, l.GlucoseEventId, l.Model,
             l.InputTokens, l.OutputTokens, l.TotalTokens,
             Math.Round(AiCostCalculator.ComputeCost(l.Model, l.InputTokens, l.OutputTokens), 6),
             l.Reason, l.Success, l.HttpStatusCode,
             l.FinishReason, l.CalledAt, l.DurationMs
         )).ToList();
+        return new PagedResult<AiUsageLogDto>(items, totalCount);
     }
 }
 

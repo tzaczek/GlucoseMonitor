@@ -248,7 +248,7 @@ function App() {
       const [historyRes, statsRes, eventsRes] = await Promise.all([
         fetch(`${API_BASE}/glucose/history?hours=${hours}`),
         fetch(`${API_BASE}/glucose/stats?hours=${hours}`),
-        fetch(`${API_BASE}/events`)
+        fetch(`${API_BASE}/events?limit=20`)
       ]);
 
       if (historyRes.ok) {
@@ -263,7 +263,7 @@ function App() {
 
       if (eventsRes.ok) {
         const eventsData = await eventsRes.json();
-        setEvents(eventsData);
+        setEvents(eventsData.items || eventsData);
       }
 
       if (!historyRes.ok && !statsRes.ok) {
@@ -596,7 +596,7 @@ function App() {
 
                   <div className="table-card">
                     <h2>Recent Readings</h2>
-                    <GlucoseTable data={history.slice(0, 50)} />
+                    <GlucoseTable data={history} />
                   </div>
                 </>
               )}

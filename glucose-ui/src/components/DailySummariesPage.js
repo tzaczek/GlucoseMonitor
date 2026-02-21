@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -12,31 +12,50 @@ import {
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import MODEL_OPTIONS from './modelOptions';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+import PAGE_SIZES from '../config/pageSize';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const PAGE_SIZE = PAGE_SIZES.dailySummaries;
 
 function DailySummariesPage() {
   const [summaries, setSummaries] = useState([]);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [selectedSummaryId, setSelectedSummaryId] = useState(null);
   const [triggering, setTriggering] = useState(false);
   const [triggerResult, setTriggerResult] = useState(null);
   const [triggerModel, setTriggerModel] = useState('');
+  const summariesOffsetRef = useRef(0);
 
-  const fetchSummaries = useCallback(async () => {
+  const fetchSummaries = useCallback(async (append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dailysummaries`);
+      const offset = append ? summariesOffsetRef.current : 0;
+      const res = await fetch(`${API_BASE}/dailysummaries?limit=${PAGE_SIZE}&offset=${offset}`);
       if (res.ok) {
         const data = await res.json();
-        setSummaries(data);
+        if (append) {
+          setSummaries(prev => [...prev, ...data.items]);
+        } else {
+          setSummaries(data.items);
+        }
+        setTotalCount(data.totalCount);
+        summariesOffsetRef.current = (append ? summariesOffsetRef.current : 0) + data.items.length;
       }
     } catch (err) {
       console.error('Failed to fetch daily summaries:', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
+
+  const summariesHasMore = summaries.length < totalCount;
+  const loadMoreSummaries = useCallback(() => fetchSummaries(true), [fetchSummaries]);
+  useInfiniteScroll(loadMoreSummaries, { hasMore: summariesHasMore, loading: loadingMore });
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -63,6 +82,7 @@ function DailySummariesPage() {
       const data = await res.json();
       if (res.ok) {
         setTriggerResult({ success: true, message: data.message });
+        summariesOffsetRef.current = 0;
         fetchSummaries();
         fetchStatus();
       } else {
@@ -79,10 +99,12 @@ function DailySummariesPage() {
   }, [fetchSummaries, fetchStatus, triggerModel]);
 
   useEffect(() => {
+    summariesOffsetRef.current = 0;
     fetchSummaries();
     fetchStatus();
 
     const handleUpdated = () => {
+      summariesOffsetRef.current = 0;
       fetchSummaries();
       fetchStatus();
     };
@@ -275,6 +297,16 @@ function DailySummariesPage() {
               </div>
             </div>
           ))}
+          <div className="scroll-sentinel" />
+          {loadingMore && (
+            <div className="loading-more">
+              <div className="spinner spinner-sm" />
+              <span>Loading more summaries...</span>
+            </div>
+          )}
+          {!summariesHasMore && summaries.length > PAGE_SIZE && (
+            <div className="list-end-message">All {totalCount} summaries loaded</div>
+          )}
         </div>
       )}
 

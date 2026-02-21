@@ -1,17 +1,23 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { format } from 'date-fns';
 import MODEL_OPTIONS from './modelOptions';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+import PAGE_SIZES from '../config/pageSize';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const PAGE_SIZE = PAGE_SIZES.meals;
 
 function MealsPage() {
   const [meals, setMeals] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('date');
   const [sortDesc, setSortDesc] = useState(true);
   const [classFilter, setClassFilter] = useState('');
+  const mealsOffsetRef = useRef(0);
 
   // Detail modal
   const [selectedMeal, setSelectedMeal] = useState(null);
@@ -35,18 +41,30 @@ function MealsPage() {
   // Event detail modal for drilling down
   const [selectedEventId, setSelectedEventId] = useState(null);
 
-  const fetchMeals = useCallback(async () => {
+  const fetchMeals = useCallback(async (append = false) => {
+    if (append) setLoadingMore(true);
     try {
+      const offset = append ? mealsOffsetRef.current : 0;
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (sortBy) params.set('sortBy', sortBy);
       params.set('desc', sortDesc);
       if (classFilter) params.set('classification', classFilter);
+      params.set('limit', PAGE_SIZE);
+      params.set('offset', offset);
       const res = await fetch(`${API_BASE}/meals?${params}`);
       const data = await res.json();
-      setMeals(data);
+      if (append) {
+        setMeals(prev => [...prev, ...data.items]);
+      } else {
+        setMeals(data.items);
+      }
+      setTotalCount(data.totalCount);
+      mealsOffsetRef.current = (append ? mealsOffsetRef.current : 0) + data.items.length;
     } catch (err) {
       console.error('Failed to fetch meals:', err);
+    } finally {
+      setLoadingMore(false);
     }
   }, [search, sortBy, sortDesc, classFilter]);
 
@@ -63,6 +81,7 @@ function MealsPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      mealsOffsetRef.current = 0;
       await Promise.all([fetchMeals(), fetchStats()]);
       setLoading(false);
     };
@@ -70,10 +89,14 @@ function MealsPage() {
   }, [fetchMeals, fetchStats]);
 
   useEffect(() => {
-    const handler = () => { fetchMeals(); fetchStats(); };
+    const handler = () => { mealsOffsetRef.current = 0; fetchMeals(); fetchStats(); };
     window.addEventListener('eventsUpdated', handler);
     return () => window.removeEventListener('eventsUpdated', handler);
   }, [fetchMeals, fetchStats]);
+
+  const mealsHasMore = meals.length < totalCount;
+  const loadMoreMeals = useCallback(() => fetchMeals(true), [fetchMeals]);
+  useInfiniteScroll(loadMoreMeals, { hasMore: mealsHasMore, loading: loadingMore });
 
   // ── Detail Modal ───────────────────────────────────────────
 
@@ -536,6 +559,16 @@ function MealsPage() {
               </div>
             </div>
           ))}
+          <div className="scroll-sentinel" />
+          {loadingMore && (
+            <div className="loading-more">
+              <div className="spinner spinner-sm" />
+              <span>Loading more meals...</span>
+            </div>
+          )}
+          {!mealsHasMore && meals.length > PAGE_SIZE && (
+            <div className="list-end-message">All {totalCount} meals loaded</div>
+          )}
         </div>
       )}
 

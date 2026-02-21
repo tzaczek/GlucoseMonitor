@@ -14,9 +14,10 @@ public class FoodController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetFoodItems(
-        [FromQuery] string? search, [FromQuery] string? sortBy, [FromQuery] bool desc = true)
+        [FromQuery] string? search, [FromQuery] string? sortBy, [FromQuery] bool desc = true,
+        [FromQuery] int? limit = null, [FromQuery] int offset = 0)
     {
-        var result = await _mediator.Send(new GetFoodItemsQuery(search, sortBy, desc));
+        var result = await _mediator.Send(new GetFoodItemsQuery(search, sortBy, desc, limit, offset));
         return Ok(result);
     }
 

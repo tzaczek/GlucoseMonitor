@@ -13,9 +13,9 @@ public class DailySummariesController : ControllerBase
     public DailySummariesController(IMediator mediator) => _mediator = mediator;
 
     [HttpGet]
-    public async Task<ActionResult> GetSummaries([FromQuery] int? limit = null, CancellationToken ct = default)
+    public async Task<ActionResult> GetSummaries([FromQuery] int? limit = null, [FromQuery] int offset = 0, CancellationToken ct = default)
     {
-        var result = await _mediator.Send(new GetDailySummariesQuery(limit), ct);
+        var result = await _mediator.Send(new GetDailySummariesQuery(limit, offset), ct);
         return Ok(result);
     }
 

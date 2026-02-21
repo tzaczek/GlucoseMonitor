@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+
+const PAGE_SIZE = 50;
 
 function getTrendArrow(trend) {
   switch (trend) {
@@ -20,40 +23,61 @@ function getValueColor(value) {
 }
 
 function GlucoseTable({ data }) {
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  const hasMore = visibleCount < data.length;
+  const loadMore = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + PAGE_SIZE, data.length));
+  }, [data.length]);
+
+  useInfiniteScroll(loadMore, { hasMore, loading: false });
+
+  const visibleData = data.slice(0, visibleCount);
+
   return (
-    <table className="readings-table">
-      <thead>
-        <tr>
-          <th>Time</th>
-          <th>Value</th>
-          <th>Trend</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((reading) => {
-          const trend = getTrendArrow(reading.trendArrow);
-          return (
-            <tr key={reading.id}>
-              <td>{format(parseISO(reading.timestamp), 'MMM dd, HH:mm')}</td>
-              <td style={{ color: getValueColor(reading.value), fontWeight: 600 }}>
-                {reading.value} mg/dL
-              </td>
-              <td>
-                <span className="trend-arrow" style={{ color: trend.color }} title={trend.label}>
-                  {trend.symbol}
-                </span>
-              </td>
-              <td>
-                {reading.isHigh && <span style={{ color: '#fbbf24' }}>⚠ High</span>}
-                {reading.isLow && <span style={{ color: '#f87171' }}>⚠ Low</span>}
-                {!reading.isHigh && !reading.isLow && <span style={{ color: '#4ade80' }}>Normal</span>}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <>
+      <table className="readings-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Value</th>
+            <th>Trend</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleData.map((reading) => {
+            const trend = getTrendArrow(reading.trendArrow);
+            return (
+              <tr key={reading.id}>
+                <td>{format(parseISO(reading.timestamp), 'MMM dd, HH:mm')}</td>
+                <td style={{ color: getValueColor(reading.value), fontWeight: 600 }}>
+                  {reading.value} mg/dL
+                </td>
+                <td>
+                  <span className="trend-arrow" style={{ color: trend.color }} title={trend.label}>
+                    {trend.symbol}
+                  </span>
+                </td>
+                <td>
+                  {reading.isHigh && <span style={{ color: '#fbbf24' }}>⚠ High</span>}
+                  {reading.isLow && <span style={{ color: '#f87171' }}>⚠ Low</span>}
+                  {!reading.isHigh && !reading.isLow && <span style={{ color: '#4ade80' }}>Normal</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {hasMore && (
+        <div className="loading-more">
+          <span>Showing {visibleCount} of {data.length} readings — scroll for more</span>
+        </div>
+      )}
+      {!hasMore && data.length > PAGE_SIZE && (
+        <div className="list-end-message">All {data.length} readings shown</div>
+      )}
+    </>
   );
 }
 

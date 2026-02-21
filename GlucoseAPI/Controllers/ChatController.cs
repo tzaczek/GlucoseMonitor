@@ -17,8 +17,8 @@ public class ChatController : ControllerBase
     // ── Sessions ────────────────────────────────────────────
 
     [HttpGet("sessions")]
-    public async Task<ActionResult<List<ChatSessionListDto>>> ListSessions(CancellationToken ct)
-        => Ok(await _mediator.Send(new ListChatSessionsQuery(), ct));
+    public async Task<ActionResult> ListSessions([FromQuery] int? limit = null, [FromQuery] int offset = 0, CancellationToken ct = default)
+        => Ok(await _mediator.Send(new ListChatSessionsQuery(limit, offset), ct));
 
     [HttpGet("sessions/{id:int}")]
     public async Task<ActionResult<ChatSessionDetailDto>> GetSession(int id, CancellationToken ct)

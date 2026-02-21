@@ -19,10 +19,11 @@ public class MealsController : ControllerBase
         [FromQuery] bool desc = true,
         [FromQuery] string? classification = null,
         [FromQuery] int? limit = null,
+        [FromQuery] int offset = 0,
         CancellationToken ct = default)
     {
         var result = await _mediator.Send(
-            new GetMealsQuery(search, sortBy, desc, classification, limit), ct);
+            new GetMealsQuery(search, sortBy, desc, classification, limit, offset), ct);
         return Ok(result);
     }
 

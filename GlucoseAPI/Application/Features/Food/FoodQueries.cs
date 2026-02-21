@@ -1,3 +1,4 @@
+using GlucoseAPI.Application.Common;
 using GlucoseAPI.Data;
 using GlucoseAPI.Models;
 using MediatR;
@@ -7,15 +8,15 @@ namespace GlucoseAPI.Application.Features.Food;
 
 // ── List all food items ──────────────────────────────────────
 
-public record GetFoodItemsQuery(string? Search, string? SortBy, bool Descending = true) : IRequest<List<FoodItemSummaryDto>>;
+public record GetFoodItemsQuery(string? Search, string? SortBy, bool Descending = true, int? Limit = null, int Offset = 0) : IRequest<PagedResult<FoodItemSummaryDto>>;
 
-public class GetFoodItemsHandler : IRequestHandler<GetFoodItemsQuery, List<FoodItemSummaryDto>>
+public class GetFoodItemsHandler : IRequestHandler<GetFoodItemsQuery, PagedResult<FoodItemSummaryDto>>
 {
     private readonly GlucoseDbContext _db;
 
     public GetFoodItemsHandler(GlucoseDbContext db) => _db = db;
 
-    public async Task<List<FoodItemSummaryDto>> Handle(GetFoodItemsQuery request, CancellationToken ct)
+    public async Task<PagedResult<FoodItemSummaryDto>> Handle(GetFoodItemsQuery request, CancellationToken ct)
     {
         var query = _db.FoodItems.AsQueryable();
 
@@ -35,7 +36,13 @@ public class GetFoodItemsHandler : IRequestHandler<GetFoodItemsQuery, List<FoodI
             _ => query.OrderByDescending(f => f.OccurrenceCount)
         };
 
-        return await query.Select(f => new FoodItemSummaryDto
+        var totalCount = await query.CountAsync(ct);
+
+        var pagedQuery = query.Skip(request.Offset);
+        if (request.Limit.HasValue)
+            pagedQuery = pagedQuery.Take(request.Limit.Value);
+
+        var items = await pagedQuery.Select(f => new FoodItemSummaryDto
         {
             Id = f.Id,
             Name = f.Name,
@@ -51,6 +58,8 @@ public class GetFoodItemsHandler : IRequestHandler<GetFoodItemsQuery, List<FoodI
             RedCount = f.RedCount,
             LastSeen = f.LastSeen
         }).ToListAsync(ct);
+
+        return new PagedResult<FoodItemSummaryDto>(items, totalCount);
     }
 }
 

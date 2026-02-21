@@ -1,3 +1,4 @@
+using GlucoseAPI.Application.Common;
 using GlucoseAPI.Data;
 using GlucoseAPI.Models;
 using MediatR;
@@ -5,19 +6,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GlucoseAPI.Application.Features.DailySummaries;
 
-public record GetDailySummariesQuery(int? Limit = null) : IRequest<List<DailySummaryListDto>>;
+public record GetDailySummariesQuery(int? Limit = null, int Offset = 0) : IRequest<PagedResult<DailySummaryListDto>>;
 
-public class GetDailySummariesHandler : IRequestHandler<GetDailySummariesQuery, List<DailySummaryListDto>>
+public class GetDailySummariesHandler : IRequestHandler<GetDailySummariesQuery, PagedResult<DailySummaryListDto>>
 {
     private readonly GlucoseDbContext _db;
 
     public GetDailySummariesHandler(GlucoseDbContext db) => _db = db;
 
-    public async Task<List<DailySummaryListDto>> Handle(GetDailySummariesQuery request, CancellationToken ct)
+    public async Task<PagedResult<DailySummaryListDto>> Handle(GetDailySummariesQuery request, CancellationToken ct)
     {
-        var query = _db.DailySummaries
+        var baseQuery = _db.DailySummaries
             .OrderByDescending(s => s.Date)
             .AsQueryable();
+
+        var totalCount = await baseQuery.CountAsync(ct);
+
+        var query = baseQuery.Skip(request.Offset);
 
         if (request.Limit.HasValue)
             query = query.Take(request.Limit.Value);
@@ -31,7 +36,7 @@ public class GetDailySummariesHandler : IRequestHandler<GetDailySummariesQuery, 
             .Select(g => new { SummaryId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.SummaryId, x => x.Count, ct);
 
-        return summaries.Select(s => new DailySummaryListDto
+        var items = summaries.Select(s => new DailySummaryListDto
         {
             Id = s.Id,
             Date = s.Date,
@@ -47,5 +52,6 @@ public class GetDailySummariesHandler : IRequestHandler<GetDailySummariesQuery, 
             AiClassification = s.AiClassification,
             SnapshotCount = snapshotCounts.GetValueOrDefault(s.Id, 0)
         }).ToList();
+        return new PagedResult<DailySummaryListDto>(items, totalCount);
     }
 }

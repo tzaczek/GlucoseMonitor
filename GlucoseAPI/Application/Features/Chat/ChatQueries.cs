@@ -1,3 +1,4 @@
+using GlucoseAPI.Application.Common;
 using GlucoseAPI.Data;
 using GlucoseAPI.Models;
 using MediatR;
@@ -7,18 +8,26 @@ namespace GlucoseAPI.Application.Features.Chat;
 
 // ── ListChatSessions ─────────────────────────────────────
 
-public record ListChatSessionsQuery : IRequest<List<ChatSessionListDto>>;
+public record ListChatSessionsQuery(int? Limit = null, int Offset = 0) : IRequest<PagedResult<ChatSessionListDto>>;
 
-public class ListChatSessionsHandler : IRequestHandler<ListChatSessionsQuery, List<ChatSessionListDto>>
+public class ListChatSessionsHandler : IRequestHandler<ListChatSessionsQuery, PagedResult<ChatSessionListDto>>
 {
     private readonly GlucoseDbContext _db;
 
     public ListChatSessionsHandler(GlucoseDbContext db) => _db = db;
 
-    public async Task<List<ChatSessionListDto>> Handle(ListChatSessionsQuery request, CancellationToken ct)
+    public async Task<PagedResult<ChatSessionListDto>> Handle(ListChatSessionsQuery request, CancellationToken ct)
     {
-        var sessions = await _db.ChatSessions
-            .OrderByDescending(s => s.UpdatedAt)
+        var baseQuery = _db.ChatSessions
+            .OrderByDescending(s => s.UpdatedAt);
+
+        var totalCount = await baseQuery.CountAsync(ct);
+
+        IQueryable<ChatSession> query = baseQuery.Skip(request.Offset);
+        if (request.Limit.HasValue)
+            query = query.Take(request.Limit.Value);
+
+        var sessions = await query
             .Select(s => new
             {
                 s.Id, s.Title, s.PeriodStart, s.PeriodEnd, s.PeriodDescription,
@@ -28,7 +37,7 @@ public class ListChatSessionsHandler : IRequestHandler<ListChatSessionsQuery, Li
             })
             .ToListAsync(ct);
 
-        return sessions.Select(s => new ChatSessionListDto
+        var items = sessions.Select(s => new ChatSessionListDto
         {
             Id = s.Id, Title = s.Title, PeriodStart = s.PeriodStart,
             PeriodEnd = s.PeriodEnd, PeriodDescription = s.PeriodDescription,
@@ -37,6 +46,7 @@ public class ListChatSessionsHandler : IRequestHandler<ListChatSessionsQuery, Li
             CreatedAt = s.CreatedAt, UpdatedAt = s.UpdatedAt,
             Periods = DeserializePeriods(s.PeriodsJson),
         }).ToList();
+        return new PagedResult<ChatSessionListDto>(items, totalCount);
     }
 
     private static List<ChatPeriodDto> DeserializePeriods(string? json)

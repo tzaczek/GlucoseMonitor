@@ -17,9 +17,10 @@ public class AiUsageController : ControllerBase
         [FromQuery] int? limit,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
+        [FromQuery] int offset = 0,
         CancellationToken ct = default)
     {
-        var result = await _mediator.Send(new GetAiUsageLogsQuery(limit, from, to), ct);
+        var result = await _mediator.Send(new GetAiUsageLogsQuery(limit, from, to, offset), ct);
         return Ok(result);
     }
 

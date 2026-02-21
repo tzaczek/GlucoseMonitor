@@ -1,26 +1,41 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
 import EventDetailModal from './EventDetailModal';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+import PAGE_SIZES from '../config/pageSize';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const PAGE_SIZE = PAGE_SIZES.events;
 
 function EventsPage() {
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const offsetRef = useRef(0);
 
-  const fetchEvents = useCallback(async () => {
+  const fetchEvents = useCallback(async (append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/events`);
+      const offset = append ? offsetRef.current : 0;
+      const res = await fetch(`${API_BASE}/events?limit=${PAGE_SIZE}&offset=${offset}`);
       if (res.ok) {
         const data = await res.json();
-        setEvents(data);
+        if (append) {
+          setEvents(prev => [...prev, ...data.items]);
+        } else {
+          setEvents(data.items);
+        }
+        setTotalCount(data.totalCount);
+        offsetRef.current = (append ? offsetRef.current : 0) + data.items.length;
       }
     } catch (err) {
       console.error('Failed to fetch events:', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
 
@@ -40,8 +55,8 @@ function EventsPage() {
     fetchEvents();
     fetchStatus();
 
-    // Listen for SignalR updates
     const handleEventsUpdated = () => {
+      offsetRef.current = 0;
       fetchEvents();
       fetchStatus();
     };
@@ -49,6 +64,10 @@ function EventsPage() {
     window.addEventListener('eventsUpdated', handleEventsUpdated);
     return () => window.removeEventListener('eventsUpdated', handleEventsUpdated);
   }, [fetchEvents, fetchStatus]);
+
+  const hasMore = events.length < totalCount;
+  const loadMore = useCallback(() => fetchEvents(true), [fetchEvents]);
+  useInfiniteScroll(loadMore, { hasMore, loading: loadingMore });
 
   const getSpikeClass = (spike) => {
     if (spike == null) return '';
@@ -194,6 +213,16 @@ function EventsPage() {
               </div>
             </div>
           ))}
+          <div className="scroll-sentinel" />
+          {loadingMore && (
+            <div className="loading-more">
+              <div className="spinner spinner-sm" />
+              <span>Loading more events...</span>
+            </div>
+          )}
+          {!hasMore && events.length > PAGE_SIZE && (
+            <div className="list-end-message">All {totalCount} events loaded</div>
+          )}
         </div>
       )}
 

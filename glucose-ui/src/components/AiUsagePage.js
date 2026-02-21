@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -15,8 +15,11 @@ import {
   AreaChart,
 } from 'recharts';
 import { format, parseISO, subDays, subMonths, startOfDay, endOfDay } from 'date-fns';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+import PAGE_SIZES from '../config/pageSize';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const LOGS_PAGE_SIZE = PAGE_SIZES.aiUsageLogs;
 
 const MODEL_COLORS = [
   '#4facfe', '#00f2fe', '#43e97b', '#fa709a',
@@ -37,8 +40,11 @@ const PERIOD_PRESETS = [
 function AiUsagePage() {
   const [summary, setSummary] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [logsTotalCount, setLogsTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMoreLogs, setLoadingMoreLogs] = useState(false);
   const [activeTab, setActiveTab] = useState('overview'); // overview | logs
+  const logsOffsetRef = useRef(0);
 
   // Period state — default to last month
   const [selectedPreset, setSelectedPreset] = useState('1m');
@@ -58,30 +64,61 @@ function AiUsagePage() {
     return preset.getRange();
   }, [selectedPreset, customFrom, customTo]);
 
+  const buildDateParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (dateRange.from) params.set('from', dateRange.from.toISOString());
+    if (dateRange.to) params.set('to', dateRange.to.toISOString());
+    return params;
+  }, [dateRange]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
+    logsOffsetRef.current = 0;
     try {
-      const params = new URLSearchParams();
-      if (dateRange.from) params.set('from', dateRange.from.toISOString());
-      if (dateRange.to) params.set('to', dateRange.to.toISOString());
-
+      const params = buildDateParams();
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const logsQs = params.toString()
-        ? `?limit=1000&${params.toString()}`
-        : '?limit=1000';
+
+      const logsParams = new URLSearchParams(params);
+      logsParams.set('limit', LOGS_PAGE_SIZE);
+      logsParams.set('offset', '0');
 
       const [summaryRes, logsRes] = await Promise.all([
         fetch(`${API_BASE}/AiUsage/summary${qs}`, { cache: 'no-store' }),
-        fetch(`${API_BASE}/AiUsage/logs${logsQs}`, { cache: 'no-store' }),
+        fetch(`${API_BASE}/AiUsage/logs?${logsParams}`, { cache: 'no-store' }),
       ]);
       if (summaryRes.ok) setSummary(await summaryRes.json());
-      if (logsRes.ok) setLogs(await logsRes.json());
+      if (logsRes.ok) {
+        const data = await logsRes.json();
+        setLogs(data.items);
+        setLogsTotalCount(data.totalCount);
+        logsOffsetRef.current = data.items.length;
+      }
     } catch (err) {
       console.error('Failed to load AI usage data:', err);
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [buildDateParams]);
+
+  const loadMoreLogs = useCallback(async () => {
+    setLoadingMoreLogs(true);
+    try {
+      const params = buildDateParams();
+      params.set('limit', LOGS_PAGE_SIZE);
+      params.set('offset', logsOffsetRef.current);
+      const res = await fetch(`${API_BASE}/AiUsage/logs?${params}`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(prev => [...prev, ...data.items]);
+        setLogsTotalCount(data.totalCount);
+        logsOffsetRef.current += data.items.length;
+      }
+    } catch (err) {
+      console.error('Failed to load more AI usage logs:', err);
+    } finally {
+      setLoadingMoreLogs(false);
+    }
+  }, [buildDateParams]);
 
   useEffect(() => {
     loadData();
@@ -181,7 +218,7 @@ function AiUsagePage() {
       {!loading && summary && summary.totalCalls > 0 && (
         <>
           {activeTab === 'overview' && <OverviewTab summary={summary} />}
-          {activeTab === 'logs' && <LogsTab logs={logs} />}
+          {activeTab === 'logs' && <LogsTab logs={logs} hasMore={logs.length < logsTotalCount} loadMore={loadMoreLogs} loadingMore={loadingMoreLogs} totalCount={logsTotalCount} />}
         </>
       )}
     </div>
@@ -471,7 +508,7 @@ function OverviewTab({ summary }) {
 
 // ── Call Logs Tab ────────────────────────────────────────────
 
-function LogsTab({ logs }) {
+function LogsTab({ logs, hasMore, loadMore, loadingMore, totalCount }) {
   const [filter, setFilter] = useState('all'); // all | success | failed
 
   const filteredLogs = useMemo(() => {
@@ -483,6 +520,8 @@ function LogsTab({ logs }) {
   const totalCost = useMemo(() => {
     return filteredLogs.reduce((sum, l) => sum + (l.cost || 0), 0);
   }, [filteredLogs]);
+
+  useInfiniteScroll(loadMore, { hasMore, loading: loadingMore });
 
   return (
     <div className="ai-logs">
@@ -571,6 +610,16 @@ function LogsTab({ logs }) {
             ))}
           </tbody>
         </table>
+        <div className="scroll-sentinel" />
+        {loadingMore && (
+          <div className="loading-more">
+            <div className="spinner spinner-sm" />
+            <span>Loading more logs...</span>
+          </div>
+        )}
+        {!hasMore && logs.length > LOGS_PAGE_SIZE && (
+          <div className="list-end-message">All {totalCount} logs loaded</div>
+        )}
       </div>
     </div>
   );

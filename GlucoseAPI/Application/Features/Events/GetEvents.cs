@@ -1,3 +1,4 @@
+using GlucoseAPI.Application.Common;
 using GlucoseAPI.Data;
 using GlucoseAPI.Models;
 using MediatR;
@@ -5,19 +6,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GlucoseAPI.Application.Features.Events;
 
-public record GetEventsQuery(int? Limit = null) : IRequest<List<GlucoseEventSummaryDto>>;
+public record GetEventsQuery(int? Limit = null, int Offset = 0) : IRequest<PagedResult<GlucoseEventSummaryDto>>;
 
-public class GetEventsHandler : IRequestHandler<GetEventsQuery, List<GlucoseEventSummaryDto>>
+public class GetEventsHandler : IRequestHandler<GetEventsQuery, PagedResult<GlucoseEventSummaryDto>>
 {
     private readonly GlucoseDbContext _db;
 
     public GetEventsHandler(GlucoseDbContext db) => _db = db;
 
-    public async Task<List<GlucoseEventSummaryDto>> Handle(GetEventsQuery request, CancellationToken ct)
+    public async Task<PagedResult<GlucoseEventSummaryDto>> Handle(GetEventsQuery request, CancellationToken ct)
     {
-        var query = _db.GlucoseEvents
+        var baseQuery = _db.GlucoseEvents
             .OrderByDescending(e => e.EventTimestamp)
             .AsQueryable();
+
+        var totalCount = await baseQuery.CountAsync(ct);
+
+        var query = baseQuery.Skip(request.Offset);
 
         if (request.Limit.HasValue)
             query = query.Take(request.Limit.Value);
@@ -31,7 +36,8 @@ public class GetEventsHandler : IRequestHandler<GetEventsQuery, List<GlucoseEven
             .Select(g => new { EventId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.EventId, x => x.Count, ct);
 
-        return events.Select(e => MapToSummaryDto(e, analysisCounts)).ToList();
+        var items = events.Select(e => MapToSummaryDto(e, analysisCounts)).ToList();
+        return new PagedResult<GlucoseEventSummaryDto>(items, totalCount);
     }
 
     internal static GlucoseEventSummaryDto MapToSummaryDto(

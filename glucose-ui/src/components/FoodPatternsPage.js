@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { format } from 'date-fns';
 import MODEL_OPTIONS from './modelOptions';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+import PAGE_SIZES from '../config/pageSize';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const PAGE_SIZE = PAGE_SIZES.food;
 
 function FoodPatternsPage() {
   const [foods, setFoods] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [selectedFood, setSelectedFood] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -15,6 +20,7 @@ function FoodPatternsPage() {
   const [sortBy, setSortBy] = useState('count');
   const [sortDesc, setSortDesc] = useState(true);
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const foodsOffsetRef = useRef(0);
 
   // AI Chat state
   const [chatSessionId, setChatSessionId] = useState(null);
@@ -25,17 +31,29 @@ function FoodPatternsPage() {
   const [chatOpen, setChatOpen] = useState(false);
   const chatEndRef = useRef(null);
 
-  const fetchFoods = useCallback(async () => {
+  const fetchFoods = useCallback(async (append = false) => {
+    if (append) setLoadingMore(true);
     try {
+      const offset = append ? foodsOffsetRef.current : 0;
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (sortBy) params.set('sortBy', sortBy);
       params.set('desc', sortDesc);
+      params.set('limit', PAGE_SIZE);
+      params.set('offset', offset);
       const res = await fetch(`${API_BASE}/food?${params}`);
       const data = await res.json();
-      setFoods(data);
+      if (append) {
+        setFoods(prev => [...prev, ...data.items]);
+      } else {
+        setFoods(data.items);
+      }
+      setTotalCount(data.totalCount);
+      foodsOffsetRef.current = (append ? foodsOffsetRef.current : 0) + data.items.length;
     } catch (err) {
       console.error('Failed to fetch foods:', err);
+    } finally {
+      setLoadingMore(false);
     }
   }, [search, sortBy, sortDesc]);
 
@@ -52,11 +70,16 @@ function FoodPatternsPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      foodsOffsetRef.current = 0;
       await Promise.all([fetchFoods(), fetchStats()]);
       setLoading(false);
     };
     load();
   }, [fetchFoods, fetchStats]);
+
+  const foodsHasMore = foods.length < totalCount;
+  const loadMoreFoods = useCallback(() => fetchFoods(true), [fetchFoods]);
+  useInfiniteScroll(loadMoreFoods, { hasMore: foodsHasMore, loading: loadingMore });
 
   useEffect(() => {
     const handler = () => { fetchFoods(); fetchStats(); };
@@ -403,6 +426,16 @@ function FoodPatternsPage() {
               ))}
             </tbody>
           </table>
+          <div className="scroll-sentinel" />
+          {loadingMore && (
+            <div className="loading-more">
+              <div className="spinner spinner-sm" />
+              <span>Loading more foods...</span>
+            </div>
+          )}
+          {!foodsHasMore && foods.length > PAGE_SIZE && (
+            <div className="list-end-message">All {totalCount} food items loaded</div>
+          )}
         </div>
       )}
 

@@ -1,3 +1,4 @@
+using GlucoseAPI.Application.Common;
 using GlucoseAPI.Data;
 using GlucoseAPI.Models;
 using MediatR;
@@ -84,15 +85,16 @@ public record GetMealsQuery(
     string? SortBy = null,
     bool Descending = true,
     string? Classification = null,
-    int? Limit = null
-) : IRequest<List<MealSummaryDto>>;
+    int? Limit = null,
+    int Offset = 0
+) : IRequest<PagedResult<MealSummaryDto>>;
 
-public class GetMealsHandler : IRequestHandler<GetMealsQuery, List<MealSummaryDto>>
+public class GetMealsHandler : IRequestHandler<GetMealsQuery, PagedResult<MealSummaryDto>>
 {
     private readonly GlucoseDbContext _db;
     public GetMealsHandler(GlucoseDbContext db) => _db = db;
 
-    public async Task<List<MealSummaryDto>> Handle(GetMealsQuery request, CancellationToken ct)
+    public async Task<PagedResult<MealSummaryDto>> Handle(GetMealsQuery request, CancellationToken ct)
     {
         var query = _db.GlucoseEvents.AsQueryable();
 
@@ -125,6 +127,10 @@ public class GetMealsHandler : IRequestHandler<GetMealsQuery, List<MealSummaryDt
                 : query.OrderBy(e => e.EventTimestamp)
         };
 
+        var totalCount = await query.CountAsync(ct);
+
+        query = query.Skip(request.Offset);
+
         if (request.Limit.HasValue)
             query = query.Take(request.Limit.Value);
 
@@ -148,7 +154,7 @@ public class GetMealsHandler : IRequestHandler<GetMealsQuery, List<MealSummaryDt
                 AiClassification = l.AiClassification
             }).ToList());
 
-        return events.Select(e => new MealSummaryDto
+        var items = events.Select(e => new MealSummaryDto
         {
             Id = e.Id,
             NoteTitle = e.NoteTitle,
@@ -168,6 +174,7 @@ public class GetMealsHandler : IRequestHandler<GetMealsQuery, List<MealSummaryDt
             AiClassification = e.AiClassification,
             Foods = foodsByEvent.GetValueOrDefault(e.Id, new List<MealFoodDto>())
         }).ToList();
+        return new PagedResult<MealSummaryDto>(items, totalCount);
     }
 }
 
