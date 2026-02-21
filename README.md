@@ -15,6 +15,7 @@ A **self-hosted Continuous Glucose Monitoring (CGM) dashboard** that connects to
 | 🤖 **AI-Powered Analysis** | GPT analyzes each event (spike severity, recovery, tips) and classifies it as 🟢 Good / 🟡 Concerning / 🔴 Problematic |
 | 💬 **AI Chat** | Interactive chat with AI about your glucose data — select multiple periods on a zoomable graph, name them, compare them, and ask follow-up questions with per-message model selection |
 | 🍽️ **Food Patterns** | AI extracts food names from meal notes, tracks how each food affects your glucose across all events, and lets you chat with AI about any food's impact |
+| 🥗 **Meals Browser** | Browse all meals with glucose impact, click for detail modal with foods and AI chat, select and compare multiple meals side-by-side with AI analysis |
 | 🌐 **Bilingual (PL/EN)** | All meal notes and food names are automatically translated between Polish and English using AI, displayed side by side |
 | 🛡️ **API Resilience** | Retry policies, circuit breakers, and timeouts on all external API calls (OpenAI, LibreLink) via Polly for robust operation |
 | 📅 **Daily Summaries** | Automatic daily aggregation with AI commentary on patterns, trends, and actionable suggestions |
@@ -206,9 +207,10 @@ Glucose/
 │   ├── Domain/                 # Pure business logic (no I/O)
 │   ├── Application/            # MediatR CQRS handlers + interfaces
 │   │   ├── Features/Chat/      # AI Chat CQRS commands & queries
-│   │   └── Features/Food/      # Food pattern CQRS commands & queries
+│   │   ├── Features/Food/      # Food pattern CQRS commands & queries
+│   │   └── Features/Meals/    # Meal queries, comparison, stats
 │   ├── Infrastructure/         # External API adapters (OpenAI, SignalR)
-│   ├── Controllers/            # Thin REST API endpoints (EventsController, FoodController, etc.)
+│   ├── Controllers/            # Thin REST API endpoints (EventsController, FoodController, MealsController, etc.)
 │   ├── Services/               # Background services + orchestration
 │   │   ├── ChatService.cs      # Background queue processor for AI chat
 │   │   ├── FoodPatternService.cs  # AI food extraction + aggregate stats
@@ -224,6 +226,7 @@ Glucose/
     └── src/components/
         ├── ChatPage.js         # AI Chat with graph-based period selection
         ├── FoodPatternsPage.js # Food patterns with AI chat integration
+        ├── MealsPage.js       # Meals browser with detail modal, compare, AI chat
         └── ...                 # Dashboard, Events, Summaries, Reports, Settings
 ```
 

@@ -14,6 +14,7 @@ import PeriodSummaryPage from './components/PeriodSummaryPage';
 import EventLogPage from './components/EventLogPage';
 import ChatPage from './components/ChatPage';
 import FoodPatternsPage from './components/FoodPatternsPage';
+import MealsPage from './components/MealsPage';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
@@ -370,6 +371,12 @@ function App() {
             Food
           </button>
           <button
+            className={page === 'meals' ? 'active' : ''}
+            onClick={() => setPage('meals')}
+          >
+            Meals
+          </button>
+          <button
             className={page === 'aiusage' ? 'active' : ''}
             onClick={() => setPage('aiusage')}
           >
@@ -400,6 +407,7 @@ function App() {
       {page === 'compare' && <ComparePage />}
       {page === 'chat' && <ChatPage />}
       {page === 'food' && <FoodPatternsPage />}
+      {page === 'meals' && <MealsPage />}
       {page === 'events' && <EventsPage />}
       {page === 'dailysummaries' && <DailySummariesPage />}
       {page === 'eventlog' && <EventLogPage onNavigate={setPage} />}

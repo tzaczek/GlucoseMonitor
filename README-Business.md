@@ -111,6 +111,15 @@ Glucose Monitor solves all of these problems in a single, self-hosted dashboard.
 - **Food management**: Rename foods, merge duplicates, or delete food items and their links.
 - **Real-time updates**: When new events are analyzed, food patterns are automatically updated and pushed to the UI via SignalR.
 
+### 🥗 Meals Browser & Comparison
+- **Full meal list**: Browse every recorded meal with date, classification, glucose spike, food tags, and note preview — sorted by date, spike, glucose level, or name with search and classification filtering.
+- **Detail modal**: Click any meal to open a rich modal showing full note content (bilingual), glucose statistics (at event, spike, min/max/avg, peak time, readings, period), linked food items with per-food spike data, and the AI analysis.
+- **Multi-select comparison**: Select any number of meals with checkboxes, then compare them in a side-by-side grid showing classification, spike, glucose metrics, and food tags for each.
+- **AI analysis & chat**: Start an AI chat from any meal detail or comparison — the AI receives full glucose data and food context and answers questions about the meal's impact, food recommendations, and patterns.
+- **Quick prompts**: Pre-built analysis buttons for common questions — "What caused the spike?", "Safe to eat?", "Healthier alternatives" for single meals; "Best meal?", "Common patterns", "Recommendations" for comparisons.
+- **Drill-down to event detail**: Jump from any meal to the full event detail modal with interactive glucose chart and analysis history.
+- **Summary stats**: Dashboard cards showing total meals, analyzed count, good/concerning/problematic breakdown, and average spike.
+
 ### 🌐 Bilingual Support (Polish & English)
 - **Automatic translation**: All meal/activity note titles and content are automatically translated to English using AI (GPT-4o-mini) when events are created.
 - **Food name translation**: Food items are extracted and stored in both the original language (Polish) and English (e.g., "ser" → "cheese", "soczewica" → "lentils").

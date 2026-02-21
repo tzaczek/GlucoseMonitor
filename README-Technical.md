@@ -61,6 +61,7 @@ GlucoseAPI/
 │       ├── Events/                     # GetEvents, GetEventDetail, GetStatus, Reprocess
 │       ├── Chat/                       # CreateSession, SendMessage, DeleteSession, DeleteAll, Templates
 │       ├── Food/                       # GetFoodItems, GetFoodDetail, GetFoodStats, Scan, Delete, Merge, Rename
+│       ├── Meals/                      # GetMeals, GetMealDetail, CompareMeals, GetMealStats
 │       ├── Comparisons/               # CreateComparison, GetComparisons, GetDetail, Delete
 │       ├── PeriodSummaries/           # CreatePeriodSummary, GetPeriodSummaries, GetDetail, Delete
 │       ├── EventLogs/                 # GetEventLogs (filtered + paginated)
@@ -85,6 +86,7 @@ GlucoseAPI/
 │   ├── EventsController.cs       # /api/events/* — meal/activity events
 │   ├── ChatController.cs         # /api/chat/* — AI chat sessions, messages, templates
 │   ├── FoodController.cs         # /api/food/* — food patterns, stats, scan, merge
+│   ├── MealsController.cs       # /api/meals/* — meal list, detail, compare, stats
 │   ├── ComparisonController.cs  # /api/comparison/* — period comparisons
 │   ├── PeriodSummaryController.cs # /api/periodsummary/* — arbitrary period summaries
 │   ├── DailySummariesController.cs # /api/dailysummaries/* — daily summaries
@@ -718,6 +720,10 @@ Manual trigger: POST /api/events/backfill-translations
 | DELETE | `/api/food/{id}` | Delete a food item and all its links |
 | PUT | `/api/food/{id}/rename` | Rename a food item |
 | POST | `/api/food/merge` | Merge multiple food items into one |
+| GET | `/api/meals` | List meals with food items (search, sort, filter by classification) |
+| GET | `/api/meals/{id}` | Meal detail with foods, glucose stats, AI analysis |
+| GET | `/api/meals/stats` | Meal statistics (total, analyzed, green/yellow/red, avg spike) |
+| POST | `/api/meals/compare` | Compare 2–10 meals (returns all details side-by-side) |
 | GET | `/api/comparison` | List all period comparisons |
 | GET | `/api/comparison/{id}` | Comparison detail + readings + events + AI |
 | POST | `/api/comparison` | Create new comparison (queued for background processing) |
@@ -853,6 +859,7 @@ glucose-ui/
         ├── PeriodSummaryPage.js   # Arbitrary period summaries (presets, custom, chart, AI analysis)
         ├── ChatPage.js            # AI Chat with graph-based multi-period selection + zoom
         ├── FoodPatternsPage.js    # Food patterns with detail view + AI chat integration
+        ├── MealsPage.js           # Meals browser with detail modal, multi-select compare, AI chat
         ├── EventLogPage.js        # Application event log with filtering, pagination, real-time updates
         ├── NotesPage.js           # Samsung Notes browser
         ├── AiUsagePage.js         # AI usage dashboard (charts, logs, costs)
@@ -862,7 +869,7 @@ glucose-ui/
 
 ### Key Design Decisions
 
-1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Summaries, Compare, AI Chat, Event Log, AI Usage, Reports, Settings.
+1. **No router**: Navigation is managed via a `page` state variable in `App.js`. Tabs switch between page components: Dashboard, Events, Daily, Summaries, Compare, AI Chat, Food, Meals, Event Log, AI Usage, Reports, Settings.
 2. **SignalR → Custom Events**: The SignalR connection lives in `App.js`. Events like `NotesUpdated` and `EventsUpdated` are re-dispatched as `window.dispatchEvent(new CustomEvent(...))` so child components can listen independently without prop drilling.
 3. **AI Usage versioning**: The `AiUsageUpdated` SignalR event increments an `aiUsageVersion` counter in App.js. The `AiUsagePage` component receives this as a React `key` prop, forcing a complete remount and fresh data fetch — solving the problem of browser-cached API responses.
 4. **Cache busting**: AI usage API calls use `{ cache: 'no-store' }` to prevent browser HTTP caching.
@@ -906,6 +913,8 @@ App.js SignalR listener
     │       └──▶ ChatPage listens → updates period start/end from AI extraction
     ├──▶ FoodPatternsUpdated → window.dispatchEvent('foodPatternsUpdated')
     │       └──▶ FoodPatternsPage listens → reloads food list + stats
+    ├──▶ EventsUpdated → window.dispatchEvent('eventsUpdated')
+    │       └──▶ MealsPage listens → reloads meal list + stats
     └──▶ AiUsageUpdated → setAiUsageVersion(v => v + 1)
             └──▶ AiUsagePage key={version} → remount → fresh fetch
 ```
